@@ -1,26 +1,27 @@
 /**
  * Wiiew Service Worker
- * Handles offline caching and W3C Web Push Notifications.
+ * Handles offline shell caching and calm W3C Web Push Notifications.
+ * Path-agnostic: supports root deployment and GitHub Pages (/Wiiew/).
  */
 
-const CACHE_NAME = 'wiiew-v1';
+const CACHE_NAME = 'wiiew-v2';
 const ASSETS = [
-  '/',
-  '/index.html',
-  '/style.css',
-  '/app.js',
-  '/manifest.json',
-  '/icons/icon.svg',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
-  '/icons/badge-72.png'
+  './',
+  './index.html',
+  './style.css',
+  './app.js',
+  './manifest.json',
+  './icons/icon.svg',
+  './icons/icon-192.png',
+  './icons/icon-512.png',
+  './icons/badge-72.png'
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(ASSETS).catch((err) => {
-        console.warn('[SW] Cache addAll warning:', err);
+        console.warn('[SW] Cache prefetch warning:', err);
       });
     })
   );
@@ -40,10 +41,9 @@ self.addEventListener('activate', (event) => {
 
 // Network-first with cache fallback
 self.addEventListener('fetch', (event) => {
-  // Skip non-GET or API/WebSocket calls
   if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
-  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/ws/')) return;
+  if (url.pathname.includes('/api/') || url.pathname.includes('/ws/')) return;
 
   event.respondWith(
     fetch(event.request)
@@ -58,13 +58,13 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-// Web Push Notification Event
+// Calm Web Push Notification Event
 self.addEventListener('push', (event) => {
   let data = {
-    title: '🚨 Wiiew Room Intrusion Alert!',
-    body: 'Sustained presence detected in your room while you are away.',
-    tag: 'wiiew-alert',
-    data: { url: '/' }
+    title: 'Wiiew',
+    body: 'Someone has entered your room.',
+    tag: 'wiiew-room-entry',
+    data: { url: './' }
   };
 
   if (event.data) {
@@ -76,31 +76,31 @@ self.addEventListener('push', (event) => {
   }
 
   const options = {
-    body: data.body,
-    icon: data.icon || '/icons/icon-192.png',
-    badge: data.badge || '/icons/badge-72.png',
-    tag: data.tag || 'wiiew-alert',
-    renotify: true,
-    requireInteraction: true,
-    vibrate: data.vibrate || [300, 100, 300, 100, 500],
-    data: data.data || { url: '/' },
+    body: data.body || 'Someone has entered your room.',
+    icon: data.icon || './icons/icon-192.png',
+    badge: data.badge || './icons/badge-72.png',
+    tag: data.tag || 'wiiew-room-entry',
+    renotify: false,
+    requireInteraction: false,
+    vibrate: data.vibrate || [200, 100, 200],
+    data: data.data || { url: './' },
     actions: [
-      { action: 'open', title: 'Open Dashboard' },
+      { action: 'open', title: 'Open Wiiew' },
       { action: 'dismiss', title: 'Dismiss' }
     ]
   };
 
   event.waitUntil(
-    self.registration.showNotification(data.title, options)
+    self.registration.showNotification(data.title || 'Wiiew', options)
   );
 });
 
-// Notification Click Handler
+// Notification Click Handler (deep-links back to Wiiew)
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   if (event.action === 'dismiss') return;
 
-  const targetUrl = (event.notification.data && event.notification.data.url) || '/';
+  const targetPath = (event.notification.data && event.notification.data.url) || './';
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
@@ -110,7 +110,7 @@ self.addEventListener('notificationclick', (event) => {
         }
       }
       if (clients.openWindow) {
-        return clients.openWindow(targetUrl);
+        return clients.openWindow(new URL(targetPath, self.location.href).href);
       }
     })
   );

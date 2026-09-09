@@ -1,7 +1,7 @@
 """
 Decision Engine for Wiiew.
 Evaluates CSI presence, applies hysteresis/debounce, checks trusted phone status,
-and determines whether to trigger an intrusion alert or suppress it.
+and determines canonical room occupancy states with calm, single-entry alerts.
 """
 
 from __future__ import annotations
@@ -20,8 +20,14 @@ EVENTS_FILE = DATA_DIR / "events.json"
 
 class DecisionEngine:
     """
-    State machine for room occupancy and intrusion alerts.
-    Implements debounce/hysteresis and safe-card suppression.
+    Canonical state machine for Wiiew room occupancy monitoring.
+    States:
+      - DISARMED
+      - EMPTY
+      - CHECKING_PRESENCE
+      - PRESENCE_TRUSTED
+      - PRESENCE_UNTRUSTED
+      - SENSOR_OFFLINE
     """
 
     def __init__(
@@ -47,12 +53,14 @@ class DecisionEngine:
         self.empty_start_time: Optional[float] = None
         self.sustained_presence: bool = False
 
-        # Alert state
-        self.last_alert_time: float = 0.0
-        self.last_suppression_log_time: float = 0.0
-        self.current_state: str = "ROOM_EMPTY"
+        # State tracking
+        self.current_state: str = "EMPTY"
         self.state_message: str = "Room is empty and quiet."
         self.last_activity_time: Optional[float] = None
+
+        # Entry Event tracking (Requirement: One entry = one notification)
+        self.is_in_untrusted_event: bool = False
+        self.last_alert_time: float = 0.0
 
         # Event History Log (last 100 entries)
         self.events: Deque[Dict] = collections.deque(maxlen=100)
@@ -85,17 +93,17 @@ class DecisionEngine:
 
     def evaluate(self) -> Dict:
         """
-        Evaluate current state, update hysteresis, and dispatch alerts if needed.
+        Evaluate current state, update hysteresis, and dispatch single-entry alerts.
         Called once per second by the background loop.
         """
         now = time.time()
 
-        # Check if sensor stream went stale (> 5 seconds without CSI frame)
+        # 1. Sensor Health
         if now - self.csi_last_seen > 5.0:
             self.sensor_online = False
             self.raw_presence = False
 
-        # 1. Hysteresis logic (Requirement 5)
+        # 2. Hysteresis logic
         if self.raw_presence and self.sensor_online:
             if self.presence_start_time is None:
                 self.presence_start_time = now
@@ -113,58 +121,75 @@ class DecisionEngine:
                 self.sustained_presence = False
                 self.presence_start_time = None
 
-        # 2. Decision Logic
+        prev_state = self.current_state
         phone_home = self.phone_detector.is_home
         is_armed = self.settings.is_armed
 
-        prev_state = self.current_state
-
-        if not self.sustained_presence:
-            self.current_state = "ROOM_EMPTY"
-            self.state_message = "Room is empty and secure."
+        # 3. Canonical State Resolution
+        if not self.sensor_online:
+            self.current_state = "SENSOR_OFFLINE"
+            self.state_message = "CSI sensor is offline."
         elif not is_armed:
-            self.current_state = "DISARMED_PRESENCE"
-            self.state_message = "Presence detected (System Disarmed)."
+            self.current_state = "DISARMED"
+            self.state_message = "System is disarmed. Monitoring paused."
+        elif not self.sustained_presence:
+            if self.raw_presence:
+                self.current_state = "CHECKING_PRESENCE"
+                dur = round(now - self.presence_start_time, 1) if self.presence_start_time else 0.0
+                thresh = self.settings.presence_sustained_seconds
+                self.state_message = f"Checking presence... ({dur}s / {thresh}s)"
+            else:
+                self.current_state = "EMPTY"
+                self.state_message = "Room is empty and quiet."
         elif phone_home:
-            # Safe Card: Presence detected but trusted phone is home -> Suppress!
-            self.current_state = "PRESENCE_DETECTED_SUPPRESSED"
+            self.current_state = "PRESENCE_TRUSTED"
             self.state_message = "Trusted device present — alert suppressed."
-            if now - self.last_suppression_log_time >= 60.0:
-                self.last_suppression_log_time = now
-                self.log_event(
-                    "ALERT_SUPPRESSED",
-                    "Presence detected in room; alert suppressed because trusted phone is home.",
-                )
         else:
-            # INTRUSION: Sustained presence + Armed + Phone NOT present!
-            self.current_state = "PRESENCE_DETECTED_INTRUDER"
-            self.state_message = "Someone may be in your room while you are away!"
+            self.current_state = "PRESENCE_UNTRUSTED"
+            self.state_message = "Someone has entered your room."
 
-            # Check alert cooldown
-            if now - self.last_alert_time >= self.settings.alert_cooldown_seconds:
+        # 4. Single-Entry Event Alert Dispatch & Logging
+        if self.current_state == "PRESENCE_UNTRUSTED":
+            if not self.is_in_untrusted_event:
+                self.is_in_untrusted_event = True
                 self.last_alert_time = now
                 event_data = self.log_event(
-                    "ALERT_TRIGGERED",
-                    "INTRUSION ALERT: Sustained presence detected and trusted phone is AWAY!",
+                    "ENTRY_DETECTED",
+                    "Someone entered your room.",
                 )
                 if self.on_alert:
                     try:
                         self.on_alert(event_data)
                     except Exception as e:
                         print(f"[DecisionEngine] Alert callback error: {e}")
+        else:
+            # When leaving PRESENCE_UNTRUSTED state
+            if self.is_in_untrusted_event:
+                if self.current_state in ("EMPTY", "DISARMED"):
+                    self.log_event("ROOM_CLEARED", "Room became empty.")
+                    self.is_in_untrusted_event = False
+                elif self.current_state == "PRESENCE_TRUSTED":
+                    self.log_event(
+                        "ALERT_SUPPRESSED",
+                        "Presence detected — trusted phone present. Alert suppressed.",
+                    )
+                    self.is_in_untrusted_event = False
 
-        # State transition logging
-        if prev_state != self.current_state and self.current_state in ("ROOM_EMPTY", "DISARMED_PRESENCE"):
-            if prev_state.startswith("PRESENCE"):
-                self.log_event("ROOM_CLEARED", "Room presence has ended; room is now clear.")
+        # State transition log for arm/disarm
+        if prev_state != self.current_state:
+            if self.current_state == "DISARMED" and prev_state != "DISARMED":
+                self.is_in_untrusted_event = False
 
         return self.get_status()
 
     def log_event(self, event_type: str, message: str) -> Dict:
-        """Record an event into the history log."""
+        """Record a human-readable event into the history log."""
+        now = time.time()
+        time_str = time.strftime("%H:%M")
         item = {
-            "timestamp": time.time(),
+            "timestamp": now,
             "time_iso": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "time_short": time_str,
             "type": event_type,
             "message": message,
             "state": self.current_state,
@@ -205,6 +230,7 @@ class DecisionEngine:
             "motion_level": self.motion_level,
             "rssi_dbm": self.rssi_dbm,
             "mean_amplitude": self.mean_amplitude,
+            "is_in_untrusted_event": self.is_in_untrusted_event,
         }
 
     def _save_events(self) -> None:

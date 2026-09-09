@@ -1,15 +1,16 @@
 const $=s=>document.querySelector(s);let ws=null,deferred=null,lastState=null;
 const stored=localStorage.getItem('wiiew_api');
-const API=()=>{const v=localStorage.getItem('wiiew_api');if(v)return v.replace(/\/$/,'');if(location.hostname.endsWith('github.io'))return '';return location.origin};
+const API=()=>{const v=localStorage.getItem('wiiew_api')||localStorage.getItem('wiiew_backend_url');if(v)return v.replace(/\/$/,'');if(location.hostname.endsWith('github.io'))return '';return location.origin};
 const apiPath=p=>`${API()}${p}`;
 const wsPath=()=>{const base=API();if(!base)return '';const u=new URL(base);u.protocol=u.protocol==='https:'?'wss:':'ws:';return `${u.origin}/ws/live`};
 function setConn(ok){const e=$('#connection');e.classList.toggle('online',ok);e.innerHTML=`<i></i> ${ok?'Live':'Offline'}`}
 function fmtAgo(v){if(v==null)return'—';if(v<5)return'just now';if(v<60)return`${Math.floor(v)}s ago`;return`${Math.floor(v/60)}m ago`}
 function render(s){lastState=s;const r=s.room||{},p=s.phone||{},sen=s.sensor||{},sys=s.system||{};const hero=$('#hero'),title=$('#state-title'),text=$('#state-text'),person=$('#person'),label=$('#visual-label');hero.className='hero';
  if(!sys.armed){hero.classList.add('empty');title.textContent=r.sustained_presence?'Presence detected':'Monitoring paused';text.textContent='System is disarmed.';label.textContent=r.sustained_presence?'PRESENCE':'PAUSED'}
- else if(r.state==='PRESENCE_DETECTED_INTRUDER'){hero.classList.add('intruder');title.textContent='Someone is here';text.textContent='Someone has entered your room.';label.textContent='PRESENCE DETECTED'}
- else if(r.state==='PRESENCE_DETECTED_SUPPRESSED'){hero.classList.add('suppressed');title.textContent='You are home';text.textContent='Trusted phone present — alert suppressed.';label.textContent='TRUSTED DEVICE'}
- else if(r.raw_presence&&!r.sustained_presence){hero.classList.add('empty');title.textContent='Checking…';text.textContent='Confirming a real presence before alerting you.';label.textContent='CONFIRMING'}
+ else if(r.state==='PRESENCE_UNTRUSTED'||r.state==='PRESENCE_DETECTED_INTRUDER'){hero.classList.add('intruder');title.textContent='Someone is here';text.textContent='Someone has entered your room.';label.textContent='PRESENCE DETECTED'}
+ else if(r.state==='PRESENCE_TRUSTED'||r.state==='PRESENCE_DETECTED_SUPPRESSED'){hero.classList.add('suppressed');title.textContent='You are home';text.textContent='Trusted phone present — alert suppressed.';label.textContent='TRUSTED DEVICE'}
+ else if(r.state==='CHECKING_PRESENCE'||(r.raw_presence&&!r.sustained_presence)){hero.classList.add('empty');title.textContent='Checking…';text.textContent='Confirming a real presence before alerting you.';label.textContent='CONFIRMING'}
+ else if(r.state==='SENSOR_OFFLINE'){hero.classList.add('empty');title.textContent='Sensor offline';text.textContent='CSI sensor is offline.';label.textContent='OFFLINE'}
  else{hero.classList.add('empty');title.textContent='Room empty';text.textContent='Nothing detected right now.';label.textContent='CLEAR'}
  const confirm=$('#confirm');if(r.raw_presence&&!r.sustained_presence&&sys.armed){confirm.hidden=false;const d=r.presence_duration_seconds||0,t=r.presence_threshold_seconds||15;$('#confirm-fill').style.width=`${Math.min(100,d/t*100)}%`;$('#confirm-time').textContent=`${Math.floor(d)}s / ${t}s`}else confirm.hidden=true;
  $('#sensor').textContent=sen.online?'Online':'Offline';$('#server').textContent=sen.online?'Online':'Offline';$('#sensor-dot').className=`dot ${sen.online?'online':''}`;$('#server-dot').className=`dot ${sen.online?'online':''}`;

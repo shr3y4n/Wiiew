@@ -1,8 +1,41 @@
 /**
  * Wiiew — Frontend Application Controller
- * Handles live WebSocket streaming, Web Push subscriptions,
- * PWA installation, and trusted-device management.
+ * Handles live WebSocket streaming, Room Visualization, Web Push subscriptions,
+ * PWA installation, and dynamic backend URL configuration.
  */
+
+// --- Configuration & Endpoints ---
+const DEFAULT_LAN_BACKEND = 'http://192.168.1.100:8000';
+
+function getBackendBaseUrl() {
+  const saved = localStorage.getItem('wiiew_backend_url');
+  if (saved && saved.trim()) {
+    return saved.trim().replace(/\/+$/, '');
+  }
+
+  // Automatic heuristic:
+  const host = window.location.hostname;
+  if (host === 'localhost' || host === '127.0.0.1' || host.startsWith('192.168.')) {
+    return window.location.origin.replace(/\/+$/, '');
+  }
+
+  // Running on GitHub Pages or external origin:
+  return DEFAULT_LAN_BACKEND;
+}
+
+function getApiUrl(path) {
+  const base = getBackendBaseUrl();
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  return `${base}${cleanPath}`;
+}
+
+function getWsUrl(path) {
+  const base = getBackendBaseUrl();
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  const url = new URL(base);
+  const proto = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${proto}//${url.host}${cleanPath}`;
+}
 
 // --- Global State ---
 let ws = null;
@@ -10,6 +43,7 @@ let deferredInstallPrompt = null;
 let currentSettings = null;
 let isAudioAlertAllowed = false;
 let audioContext = null;
+let connectionFailures = 0;
 
 // --- Helper Functions ---
 function urlBase64ToUint8Array(base64String) {
@@ -23,7 +57,7 @@ function urlBase64ToUint8Array(base64String) {
   return outputArray;
 }
 
-function playBeep(freq = 880, duration = 0.2) {
+function playBeep(freq = 740, duration = 0.18) {
   if (!audioContext) {
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
   }
@@ -36,13 +70,13 @@ function playBeep(freq = 880, duration = 0.2) {
   osc.frequency.value = freq;
   osc.connect(gain);
   gain.connect(audioContext.destination);
-  gain.gain.setValueAtTime(0.3, audioContext.currentTime);
+  gain.gain.setValueAtTime(0.2, audioContext.currentTime);
   gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
   osc.start();
   osc.stop(audioContext.currentTime + duration);
 }
 
-// --- PWA Installation ---
+// --- PWA Installation Prompt ---
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
   deferredInstallPrompt = e;
@@ -54,30 +88,47 @@ document.getElementById('btn-install')?.addEventListener('click', async () => {
   if (deferredInstallPrompt) {
     deferredInstallPrompt.prompt();
     const { outcome } = await deferredInstallPrompt.userChoice;
-    console.log('[PWA] User response to install:', outcome);
+    console.log('[PWA] Install prompt outcome:', outcome);
     deferredInstallPrompt = null;
     document.getElementById('btn-install').style.display = 'none';
   }
 });
 
-// Register Service Worker
+// Register Service Worker with relative scope
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js')
+    navigator.serviceWorker.register('./sw.js', { scope: './' })
       .then((reg) => console.log('[SW] Registered with scope:', reg.scope))
-      .catch((err) => console.warn('[SW] Registration failed:', err));
+      .catch((err) => console.warn('[SW] Registration warning:', err));
   });
 }
 
 // --- WebSocket Live Stream ---
 function connectWebSocket() {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${protocol}//${window.location.host}/ws/live`;
+  if (ws) {
+    try { ws.close(); } catch (_) {}
+  }
 
-  ws = new WebSocket(wsUrl);
+  const wsUrl = getWsUrl('/ws/live');
+  console.log('[WS] Connecting to:', wsUrl);
+
+  try {
+    ws = new WebSocket(wsUrl);
+  } catch (err) {
+    console.error('[WS] Connection init error:', err);
+    handleBackendOffline();
+    setTimeout(connectWebSocket, 3000);
+    return;
+  }
 
   ws.onopen = () => {
-    console.log('[WS] Connected to Wiiew live stream');
+    console.log('[WS] Connected to Wiiew stream');
+    connectionFailures = 0;
+    const badge = document.getElementById('badge-backend-status');
+    if (badge) {
+      badge.className = 'status-pill pill-green';
+      badge.textContent = 'CONNECTED';
+    }
     document.getElementById('ws-latency-text').textContent = 'Live 1 Hz';
   };
 
@@ -91,8 +142,11 @@ function connectWebSocket() {
   };
 
   ws.onclose = () => {
-    document.getElementById('ws-latency-text').textContent = 'Reconnecting...';
-    setTimeout(connectWebSocket, 2000);
+    connectionFailures++;
+    if (connectionFailures >= 2) {
+      handleBackendOffline();
+    }
+    setTimeout(connectWebSocket, 2500);
   };
 
   ws.onerror = () => {
@@ -100,56 +154,112 @@ function connectWebSocket() {
   };
 }
 
-// --- Dashboard UI Update ---
+function handleBackendOffline() {
+  const badge = document.getElementById('badge-backend-status');
+  if (badge) {
+    badge.className = 'status-pill pill-red';
+    badge.textContent = 'OFFLINE';
+  }
+  document.getElementById('ws-latency-text').textContent = 'Backend Offline';
+
+  const roomCard = document.getElementById('room-card');
+  const title = document.getElementById('room-status-title');
+  const desc = document.getElementById('room-status-desc');
+
+  roomCard.className = 'room-card state-offline';
+  title.textContent = 'BACKEND OFFLINE';
+  desc.textContent = 'Cannot reach Wiiew server. Check connection in Settings.';
+
+  document.getElementById('human-silhouette').style.display = 'none';
+  document.getElementById('checking-indicator').style.display = 'none';
+  document.getElementById('trusted-home-icon').style.display = 'none';
+  document.getElementById('rf-waves-container').style.display = 'none';
+}
+
+// --- Dashboard & Room Visualization Update ---
 function updateDashboard(state) {
   const room = state.room || {};
   const sensor = state.sensor || {};
   const phone = state.phone || {};
   const sys = state.system || {};
 
-  // 1. Hero Badge
-  const heroBadge = document.getElementById('hero-badge');
-  const statusTitle = document.getElementById('status-title');
-  const statusSubtitle = document.getElementById('status-subtitle');
+  const roomCard = document.getElementById('room-card');
+  const title = document.getElementById('room-status-title');
+  const desc = document.getElementById('room-status-desc');
 
-  heroBadge.className = 'hero-status';
+  const sil = document.getElementById('human-silhouette');
+  const checking = document.getElementById('checking-indicator');
+  const trustedVisual = document.getElementById('trusted-home-icon');
+  const rfWaves = document.getElementById('rf-waves-container');
 
-  if (room.state === 'PRESENCE_DETECTED_INTRUDER') {
-    heroBadge.classList.add('state-intruder');
-    statusTitle.textContent = 'PRESENCE DETECTED';
-    statusSubtitle.textContent = 'Someone may be in your room while you are away!';
-    if (sys.sound_enabled && isAudioAlertAllowed) playBeep(980, 0.4);
-  } else if (room.state === 'PRESENCE_DETECTED_SUPPRESSED') {
-    heroBadge.classList.add('state-suppressed');
-    statusTitle.textContent = 'PRESENCE DETECTED';
-    statusSubtitle.textContent = 'Trusted device present — alert suppressed.';
-  } else if (room.state === 'DISARMED_PRESENCE' || !sys.armed) {
-    heroBadge.classList.add('state-disarmed');
-    statusTitle.textContent = room.state === 'DISARMED_PRESENCE' ? 'PRESENCE (DISARMED)' : 'SYSTEM DISARMED';
-    statusSubtitle.textContent = sys.armed ? room.message : 'Monitoring paused by user.';
-  } else {
-    heroBadge.classList.add('state-empty');
-    statusTitle.textContent = 'ROOM EMPTY';
-    statusSubtitle.textContent = 'Room is empty and quiet.';
+  // Reset visuals
+  sil.style.display = 'none';
+  checking.style.display = 'none';
+  trustedVisual.style.display = 'none';
+  rfWaves.style.display = 'flex';
+
+  roomCard.className = 'room-card';
+
+  // State Resolver
+  const st = room.state || 'EMPTY';
+
+  switch (st) {
+    case 'PRESENCE_UNTRUSTED':
+      roomCard.classList.add('state-untrusted');
+      title.textContent = 'SOMEONE IS HERE';
+      desc.textContent = 'Someone has entered your room.';
+      sil.style.display = 'flex';
+      rfWaves.style.display = 'none';
+      if (sys.sound_enabled && isAudioAlertAllowed) playBeep(780, 0.25);
+      break;
+
+    case 'PRESENCE_TRUSTED':
+      roomCard.classList.add('state-trusted');
+      title.textContent = 'YOU ARE HOME';
+      desc.textContent = 'Trusted device present — alert suppressed.';
+      trustedVisual.style.display = 'flex';
+      break;
+
+    case 'CHECKING_PRESENCE':
+      roomCard.classList.add('state-checking');
+      title.textContent = 'CHECKING PRESENCE';
+      const dur = room.presence_duration_seconds || 0;
+      const thresh = room.presence_threshold_seconds || 15;
+      desc.textContent = `Confirming sustained activity... (${dur.toFixed(0)}s / ${thresh}s)`;
+      checking.style.display = 'flex';
+      document.getElementById('checking-timer').textContent = `${dur.toFixed(0)}s`;
+
+      // Update radial ring
+      const ringFill = document.getElementById('progress-ring-fill');
+      if (ringFill) {
+        const circumference = 301.59;
+        const pct = Math.min(1, dur / thresh);
+        const offset = circumference - (pct * circumference);
+        ringFill.style.strokeDashoffset = offset;
+      }
+      break;
+
+    case 'DISARMED':
+      roomCard.classList.add('state-disarmed');
+      title.textContent = 'SYSTEM DISARMED';
+      desc.textContent = 'Monitoring paused by user.';
+      break;
+
+    case 'SENSOR_OFFLINE':
+      roomCard.classList.add('state-offline');
+      title.textContent = 'SENSOR OFFLINE';
+      desc.textContent = 'ESP32 CSI sensor stream is disconnected.';
+      break;
+
+    case 'EMPTY':
+    default:
+      roomCard.classList.add('state-empty');
+      title.textContent = 'ROOM EMPTY';
+      desc.textContent = 'Room is empty and quiet.';
+      break;
   }
 
-  // 2. Hysteresis Debounce Progress Bar
-  const debounceContainer = document.getElementById('debounce-bar-container');
-  const debounceFill = document.getElementById('debounce-fill');
-  const debounceTimer = document.getElementById('debounce-timer');
-
-  if (room.raw_presence && !room.sustained_presence && sys.armed) {
-    debounceContainer.style.display = 'block';
-    const dur = room.presence_duration_seconds || 0;
-    const thresh = room.presence_threshold_seconds || 15;
-    const pct = Math.min(100, (dur / thresh) * 100);
-    debounceFill.style.width = `${pct}%`;
-    debounceTimer.textContent = `${dur.toFixed(0)}s / ${thresh}s`;
-  } else {
-    debounceContainer.style.display = 'none';
-  }
-
-  // 3. CSI Sensor Quick Pill
+  // Quick Telemetry Pills
   const badgeSensor = document.getElementById('badge-sensor');
   if (sensor.online) {
     badgeSensor.className = 'status-pill pill-green';
@@ -159,7 +269,6 @@ function updateDashboard(state) {
     badgeSensor.textContent = 'OFFLINE';
   }
 
-  // 4. RuView Server Quick Pill
   const badgeServer = document.getElementById('badge-server');
   if (sensor.online) {
     badgeServer.className = 'status-pill pill-green';
@@ -169,7 +278,6 @@ function updateDashboard(state) {
     badgeServer.textContent = 'OFFLINE';
   }
 
-  // 5. Trusted Phone Quick Pill
   const labelPhoneName = document.getElementById('label-phone-name');
   const badgePhone = document.getElementById('badge-phone');
   const phoneSubtext = document.getElementById('phone-subtext');
@@ -183,7 +291,7 @@ function updateDashboard(state) {
   } else if (phone.is_home) {
     badgePhone.className = 'status-pill pill-green';
     badgePhone.textContent = 'HOME';
-    if (phone.status_label.includes('SLEEPING')) {
+    if (phone.status_label && phone.status_label.includes('SLEEPING')) {
       const minLeft = Math.ceil((phone.remaining_grace_seconds || 0) / 60);
       phoneSubtext.textContent = `Sleep grace (${minLeft}m left)`;
     } else {
@@ -196,7 +304,7 @@ function updateDashboard(state) {
     phoneSubtext.textContent = ago ? `Last seen ${Math.floor(ago / 60)}m ago` : 'Not seen';
   }
 
-  // 6. Arm / Disarm Button
+  // Arm / Disarm Button
   const btnArm = document.getElementById('btn-arm-toggle');
   const btnArmText = document.getElementById('btn-arm-text');
   if (sys.armed) {
@@ -207,11 +315,11 @@ function updateDashboard(state) {
     btnArmText.textContent = 'SYSTEM DISARMED';
   }
 
-  // 7. Last Activity Text
+  // Last Activity Text
   const lastAct = room.last_activity_seconds_ago;
   const lastActElem = document.getElementById('last-activity-text');
   if (lastAct === null || lastAct === undefined) {
-    lastActElem.textContent = 'Last activity: Unknown';
+    lastActElem.textContent = 'Last activity: None';
   } else if (lastAct < 5) {
     lastActElem.textContent = 'Last activity: Just now';
   } else if (lastAct < 60) {
@@ -221,7 +329,7 @@ function updateDashboard(state) {
     lastActElem.textContent = `Last activity: ${mins} min ago`;
   }
 
-  // 8. Subcarrier Visualizer Bars
+  // Subcarrier Visualizer Bars
   updateSubcarrierBars(sensor.subcarriers, sensor.rssi_dbm, sensor.mean_amplitude);
 }
 
@@ -229,12 +337,11 @@ function updateSubcarrierBars(amps, rssi, meanAmp) {
   const container = document.getElementById('subcarrier-visualizer');
   const metricsLabel = document.getElementById('subcarrier-metrics');
   if (metricsLabel) {
-    metricsLabel.textContent = `${rssi} dBm | amp: ${meanAmp.toFixed(1)}`;
+    metricsLabel.textContent = `${rssi} dBm | amp: ${(meanAmp || 0).toFixed(1)}`;
   }
 
   if (!amps || amps.length === 0) return;
 
-  // Render 52 bars
   const displayAmps = amps.slice(0, 52);
   const maxAmp = Math.max(1.0, ...displayAmps);
 
@@ -256,13 +363,13 @@ function updateSubcarrierBars(amps, rssi, meanAmp) {
   }
 }
 
-// --- Arm / Disarm Click ---
+// --- Arm / Disarm Toggle ---
 document.getElementById('btn-arm-toggle')?.addEventListener('click', async () => {
   isAudioAlertAllowed = true;
   try {
-    const res = await fetch('/api/arm', { method: 'POST' });
+    const res = await fetch(getApiUrl('/api/arm'), { method: 'POST' });
     const data = await res.json();
-    console.log('[Arm] System armed status:', data.armed);
+    console.log('[Arm] Toggled system arming:', data.armed);
   } catch (err) {
     console.error('[Arm] Error toggling arm:', err);
   }
@@ -271,51 +378,48 @@ document.getElementById('btn-arm-toggle')?.addEventListener('click', async () =>
 // --- Safe-Card Heartbeat ("I'm Home") ---
 document.getElementById('btn-heartbeat')?.addEventListener('click', async () => {
   try {
-    await fetch('/api/heartbeat', { method: 'POST' });
+    await fetch(getApiUrl('/api/heartbeat'), { method: 'POST' });
     const btn = document.getElementById('btn-heartbeat');
     const orig = btn.innerHTML;
-    btn.innerHTML = '<span>✓ Safe Card Updated</span>';
-    setTimeout(() => btn.innerHTML = orig, 1500);
+    btn.innerHTML = '<span>✓ Safe Card Registered</span>';
+    setTimeout(() => btn.innerHTML = orig, 1800);
   } catch (err) {
     console.error('[Heartbeat] Error:', err);
   }
 });
 
-// Automatic Heartbeat when PWA is open on mobile
+// Auto foreground heartbeat
 setInterval(() => {
   if (document.visibilityState === 'visible') {
-    fetch('/api/heartbeat', { method: 'POST' }).catch(() => {});
+    fetch(getApiUrl('/api/heartbeat'), { method: 'POST' }).catch(() => {});
   }
 }, 20000);
 
 // --- Activity Log History ---
 async function loadEvents() {
   try {
-    const res = await fetch('/api/events');
+    const res = await fetch(getApiUrl('/api/events'));
     const { events } = await res.json();
     const list = document.getElementById('event-list');
     if (!events || events.length === 0) {
-      list.innerHTML = '<div class="event-placeholder">No intrusion events recorded.</div>';
+      list.innerHTML = '<div class="event-placeholder">No activity events recorded yet.</div>';
       return;
     }
 
     list.innerHTML = events.slice(0, 15).map(ev => {
       let cls = '';
-      if (ev.type === 'ALERT_TRIGGERED') cls = 'alert';
+      if (ev.type === 'ENTRY_DETECTED') cls = 'entry';
       else if (ev.type === 'ALERT_SUPPRESSED') cls = 'suppressed';
 
       return `
         <div class="event-item ${cls}">
-          <div class="event-top">
-            <span>${ev.type.replace('_', ' ')}</span>
-            <span style="opacity: 0.6;">${ev.time_iso ? ev.time_iso.split(' ')[1] : ''}</span>
-          </div>
-          <div class="event-msg">${ev.message}</div>
+          <span class="event-msg">${ev.message}</span>
+          <span class="event-time">${ev.time_short || (ev.time_iso ? ev.time_iso.split(' ')[1] : '')}</span>
         </div>
       `;
     }).join('');
   } catch (e) {
-    console.error('[Events] Error loading history:', e);
+    console.error('[Events] Error loading:', e);
   }
 }
 document.getElementById('btn-refresh-events')?.addEventListener('click', loadEvents);
@@ -324,15 +428,39 @@ document.getElementById('btn-refresh-events')?.addEventListener('click', loadEve
 const settingsModal = document.getElementById('settings-modal');
 document.getElementById('btn-settings-open')?.addEventListener('click', async () => {
   settingsModal.style.display = 'flex';
+  document.getElementById('cfg-backend-url').value = getBackendBaseUrl();
   await loadSettings();
 });
 document.getElementById('btn-settings-close')?.addEventListener('click', () => {
   settingsModal.style.display = 'none';
 });
 
+// Test Backend Connection Button
+document.getElementById('btn-test-backend')?.addEventListener('click', async () => {
+  const inputUrl = document.getElementById('cfg-backend-url').value.trim().replace(/\/+$/, '');
+  const msgElem = document.getElementById('backend-test-msg');
+  msgElem.textContent = 'Testing connection...';
+
+  const startTime = performance.now();
+  try {
+    const res = await fetch(`${inputUrl}/api/status`, { mode: 'cors' });
+    if (res.ok) {
+      const elapsed = Math.round(performance.now() - startTime);
+      msgElem.style.color = '#34d399';
+      msgElem.textContent = `✓ Connected successfully (${elapsed}ms)!`;
+    } else {
+      msgElem.style.color = '#f87171';
+      msgElem.textContent = `HTTP error: ${res.status}`;
+    }
+  } catch (err) {
+    msgElem.style.color = '#f87171';
+    msgElem.textContent = `Connection failed: ${err.message}`;
+  }
+});
+
 async function loadSettings() {
   try {
-    const res = await fetch('/api/settings');
+    const res = await fetch(getApiUrl('/api/settings'));
     currentSettings = await res.json();
 
     document.getElementById('cfg-phone-name').value = currentSettings.trusted_phone_name || 'My Phone';
@@ -359,6 +487,14 @@ document.getElementById('cfg-debounce-slider')?.addEventListener('input', (e) =>
 });
 
 document.getElementById('btn-save-settings')?.addEventListener('click', async () => {
+  // 1. Save Backend URL if modified
+  const newBackend = document.getElementById('cfg-backend-url').value.trim().replace(/\/+$/, '');
+  const prevBackend = getBackendBaseUrl();
+  if (newBackend) {
+    localStorage.setItem('wiiew_backend_url', newBackend);
+  }
+
+  // 2. Save Server Settings
   if (!currentSettings) currentSettings = {};
   currentSettings.trusted_phone_name = document.getElementById('cfg-phone-name').value.trim();
   currentSettings.trusted_phone_ip = document.getElementById('cfg-phone-ip').value.trim();
@@ -367,29 +503,33 @@ document.getElementById('btn-save-settings')?.addEventListener('click', async ()
   currentSettings.presence_sustained_seconds = parseFloat(document.getElementById('cfg-debounce-slider').value);
 
   try {
-    await fetch('/api/settings', {
+    await fetch(getApiUrl('/api/settings'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(currentSettings)
     });
     settingsModal.style.display = 'none';
-    console.log('[Settings] Saved successfully');
+
+    // Reconnect WebSocket if backend URL changed
+    if (newBackend !== prevBackend) {
+      connectWebSocket();
+    }
   } catch (e) {
     console.error('[Settings] Error saving:', e);
   }
 });
 
-// LAN Device Discovery for 1-click phone selection
+// LAN Device Discovery
 document.getElementById('btn-discover-devices')?.addEventListener('click', async () => {
   const listContainer = document.getElementById('discovered-devices-list');
   listContainer.style.display = 'block';
-  listContainer.innerHTML = '<div style="font-size: 0.75rem; color: #9ca3af; padding: 4px;">Scanning local Wi-Fi ARP cache...</div>';
+  listContainer.innerHTML = '<div style="font-size: 0.74rem; color: #9ca3af; padding: 4px;">Scanning local network...</div>';
 
   try {
-    const res = await fetch('/api/devices/discover');
+    const res = await fetch(getApiUrl('/api/devices/discover'));
     const { devices } = await res.json();
     if (!devices || devices.length === 0) {
-      listContainer.innerHTML = '<div style="font-size: 0.75rem; color: #9ca3af; padding: 4px;">No other devices detected on LAN.</div>';
+      listContainer.innerHTML = '<div style="font-size: 0.74rem; color: #9ca3af; padding: 4px;">No other devices detected on LAN.</div>';
       return;
     }
 
@@ -397,29 +537,29 @@ document.getElementById('btn-discover-devices')?.addEventListener('click', async
       <div class="dev-item" onclick="selectDiscoveredDevice('${dev.ip}', '${dev.mac}', '${dev.hostname}')">
         <div>
           <div style="font-weight: 600;">${dev.hostname || 'Device'}</div>
-          <div style="opacity: 0.6; font-size: 0.7rem;">${dev.ip} (${dev.mac})</div>
+          <div style="opacity: 0.6; font-size: 0.68rem;">${dev.ip} (${dev.mac})</div>
         </div>
-        <span class="btn-link" style="font-size: 0.75rem;">Select</span>
+        <span class="btn-link" style="font-size: 0.72rem;">Select</span>
       </div>
     `).join('');
   } catch (e) {
-    listContainer.innerHTML = '<div style="font-size: 0.75rem; color: #ef4444; padding: 4px;">Scan failed.</div>';
+    listContainer.innerHTML = '<div style="font-size: 0.74rem; color: #f87171; padding: 4px;">Scan failed.</div>';
   }
 });
 
 window.selectDiscoveredDevice = (ip, mac, name) => {
   document.getElementById('cfg-phone-ip').value = ip;
   document.getElementById('cfg-phone-mac').value = mac;
-  if (name && name !== 'Unknown Device') {
+  if (name && !name.includes('Device')) {
     document.getElementById('cfg-phone-name').value = name;
   }
   document.getElementById('discovered-devices-list').style.display = 'none';
 };
 
-// --- Web Push Subscription ---
+// --- Web Push Subscriptions ---
 document.getElementById('btn-enable-push')?.addEventListener('click', async () => {
   const statusMsg = document.getElementById('push-status-msg');
-  statusMsg.textContent = 'Requesting notification permission...';
+  statusMsg.textContent = 'Requesting permission...';
 
   if (!('Notification' in window) || !('serviceWorker' in navigator)) {
     statusMsg.textContent = 'Web Push is not supported in this browser.';
@@ -428,13 +568,13 @@ document.getElementById('btn-enable-push')?.addEventListener('click', async () =
 
   const permission = await Notification.requestPermission();
   if (permission !== 'granted') {
-    statusMsg.textContent = 'Notification permission was denied.';
+    statusMsg.textContent = 'Notification permission denied.';
     return;
   }
 
   try {
-    statusMsg.textContent = 'Fetching VAPID key...';
-    const keyRes = await fetch('/api/push/public-key');
+    statusMsg.textContent = 'Fetching VAPID public key...';
+    const keyRes = await fetch(getApiUrl('/api/push/public-key'));
     const { publicKey } = await keyRes.json();
     const appServerKey = urlBase64ToUint8Array(publicKey);
 
@@ -445,27 +585,27 @@ document.getElementById('btn-enable-push')?.addEventListener('click', async () =
       applicationServerKey: appServerKey
     });
 
-    await fetch('/api/push/subscribe', {
+    await fetch(getApiUrl('/api/push/subscribe'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(sub)
     });
 
-    statusMsg.textContent = '✓ Web Push enabled! Ready to receive alerts.';
-    console.log('[WebPush] Subscribed successfully');
+    statusMsg.style.color = '#34d399';
+    statusMsg.textContent = '✓ Web Push enabled! Ready to receive entry notifications.';
   } catch (err) {
+    statusMsg.style.color = '#f87171';
     statusMsg.textContent = `Subscription error: ${err.message}`;
-    console.error('[WebPush] Error:', err);
   }
 });
 
 document.getElementById('btn-test-push')?.addEventListener('click', async () => {
   const statusMsg = document.getElementById('push-status-msg');
-  statusMsg.textContent = 'Sending test push notification...';
+  statusMsg.textContent = 'Sending test notification...';
   try {
-    const res = await fetch('/api/push/test', { method: 'POST' });
+    const res = await fetch(getApiUrl('/api/push/test'), { method: 'POST' });
     const data = await res.json();
-    statusMsg.textContent = `✓ Test push sent to ${data.delivered} registered device(s).`;
+    statusMsg.textContent = `✓ Test sent to ${data.delivered} registered device(s).`;
   } catch (err) {
     statusMsg.textContent = 'Test notification failed.';
   }
@@ -475,7 +615,7 @@ document.getElementById('btn-test-push')?.addEventListener('click', async () => 
 window.addEventListener('DOMContentLoaded', () => {
   connectWebSocket();
   loadEvents();
-  // Request user gesture to enable web audio beeps
+
   document.addEventListener('click', () => {
     isAudioAlertAllowed = true;
   }, { once: true });

@@ -84,9 +84,9 @@ class WebPushService:
 
     def send_notification(
         self,
-        title: str,
-        body: str,
-        tag: str = "wiiew-alert",
+        title: str = "Wiiew",
+        body: str = "Someone has entered your room.",
+        tag: str = "wiiew-room-entry",
         data: Optional[Dict] = None,
     ) -> int:
         """
@@ -101,13 +101,13 @@ class WebPushService:
         payload = json.dumps({
             "title": title,
             "body": body,
-            "icon": "/icons/icon-192.png",
-            "badge": "/icons/badge-72.png",
+            "icon": "./icons/icon-192.png",
+            "badge": "./icons/badge-72.png",
             "tag": tag,
-            "renotify": True,
-            "requireInteraction": True,
-            "vibrate": [300, 100, 300, 100, 500],
-            "data": data or {"url": "/", "timestamp": time.time() if "time" in globals() else 0},
+            "renotify": False,
+            "requireInteraction": False,
+            "vibrate": [200, 100, 200],
+            "data": data or {"url": "./", "timestamp": time.time()},
         })
 
         vapid_claims = {"sub": "mailto:wiiew-local@local.net"}

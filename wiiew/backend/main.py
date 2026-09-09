@@ -39,15 +39,15 @@ phone_detector: TrustedDeviceDetector = TrustedDeviceDetector(settings)
 
 
 def handle_intrusion_alert(event: Dict) -> None:
-    """Callback fired when the decision engine declares an intrusion."""
-    logger.warning("🚨 INTRUSION ALERT TRIGGERED: %s", event.get("message"))
+    """Callback fired when the decision engine declares a new room entry."""
+    logger.info("Room entry event: %s", event.get("message"))
     delivered = push_service.send_notification(
-        title="🚨 Wiiew: Intrusion Alert!",
-        body="Presence detected in your room while your trusted phone is away!",
-        tag="wiiew-intrusion-alert",
-        data={"url": "/", "state": event.get("state")},
+        title="Wiiew",
+        body="Someone has entered your room.",
+        tag="wiiew-room-entry",
+        data={"url": "./", "state": event.get("state")},
     )
-    logger.info("Delivered alert to %d push subscription(s)", delivered)
+    logger.info("Delivered entry notification to %d push subscription(s)", delivered)
 
 
 decision_engine: DecisionEngine = DecisionEngine(
@@ -157,9 +157,14 @@ app = FastAPI(title="Wiiew Room Intrusion Monitor", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=[
+        "https://shr3y4n.github.io",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ],
+    allow_origin_regex=r"^https?://(192\.168\.\d+\.\d+|localhost|127\.0\.0\.1|shr3y4n\.github\.io)(:\d+)?$",
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -272,8 +277,8 @@ async def api_push_subscribe(req: Request):
 async def api_push_test():
     """Send a test push notification to verify phone receipt."""
     delivered = push_service.send_notification(
-        title="🔔 Wiiew Test Notification",
-        body="Push notification delivery is operational on your device!",
+        title="Wiiew",
+        body="Test notification — notifications are working.",
         tag="wiiew-test-notification",
     )
     return {"status": "ok", "delivered": delivered}

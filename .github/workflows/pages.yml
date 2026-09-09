@@ -36,6 +36,7 @@ jobs:
           cp wiiew/frontend/icons/icon.svg _site/icons/icon.svg
           cp wiiew/frontend/icons/icon-192.png _site/icons/icon-192.png
           cp wiiew/frontend/icons/icon-512.png _site/icons/icon-512.png
+          cp wiiew/frontend/icons/maskable-icon-512.png _site/icons/maskable-icon-512.png
           cp wiiew/frontend/icons/badge-72.png _site/icons/badge-72.png
           touch _site/.nojekyll
 
