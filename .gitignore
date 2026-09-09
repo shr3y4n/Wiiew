@@ -25,6 +25,8 @@ wiiew/data/
 *.exe
 cloudflared*
 build/
+dist/
+*.spec
 firmware/**/build/
 
 # Logs & scratch

@@ -7,6 +7,17 @@
 // --- Configuration & Endpoints ---
 const DEFAULT_LAN_BACKEND = 'http://192.168.1.100:8000';
 
+try {
+  const _params = new URLSearchParams(window.location.search);
+  const _qApi = _params.get('api') || _params.get('backend');
+  if (_qApi && _qApi.trim()) {
+    let _clean = _qApi.trim().replace(/\/+$/, '');
+    if (!_clean.startsWith('http://') && !_clean.startsWith('https://')) _clean = 'https://' + _clean;
+    localStorage.setItem('wiiew_api', _clean);
+    localStorage.setItem('wiiew_backend_url', _clean);
+  }
+} catch (e) {}
+
 function getBackendBaseUrl() {
   let saved = localStorage.getItem('wiiew_backend_url') || localStorage.getItem('wiiew_api');
   if (saved && saved.trim()) {

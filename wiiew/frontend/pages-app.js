@@ -1,5 +1,15 @@
 const $=s=>document.querySelector(s);let ws=null,deferred=null,lastState=null;
 const stored=localStorage.getItem('wiiew_api');
+try{
+  const _p=new URLSearchParams(window.location.search);
+  const _q=_p.get('api')||_p.get('backend');
+  if(_q&&_q.trim()){
+    let _c=_q.trim().replace(/\/+$/,'');
+    if(!_c.startsWith('http://')&&!_c.startsWith('https://'))_c='https://'+_c;
+    localStorage.setItem('wiiew_api',_c);
+    localStorage.setItem('wiiew_backend_url',_c);
+  }
+}catch(e){}
 const API=()=>{
   let v = localStorage.getItem('wiiew_api') || localStorage.getItem('wiiew_backend_url');
   if (v && v.trim()) {
