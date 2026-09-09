@@ -55,6 +55,7 @@ def make_test_settings() -> WiiewSettings:
         presence_sustained_seconds=15.0,
         presence_clear_seconds=10.0,
         phone_grace_period_seconds=300,
+        phone_proximity_enabled=False,
         is_armed=True,
     )
 

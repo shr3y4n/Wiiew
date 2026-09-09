@@ -133,7 +133,7 @@ class DecisionEngine:
                 self.presence_start_time = None
 
         prev_state = self.current_state
-        phone_home = self.phone_detector.is_home
+        phone_in_room = getattr(self.phone_detector, "is_trusted_in_room", self.phone_detector.is_home)
         is_armed = self.settings.is_armed
 
         # 3. Canonical State Resolution
@@ -152,7 +152,7 @@ class DecisionEngine:
             else:
                 self.current_state = "EMPTY"
                 self.state_message = "Room is empty and quiet."
-        elif phone_home:
+        elif phone_in_room:
             self.current_state = "PRESENCE_TRUSTED"
             self.state_message = "Trusted device present — alert suppressed."
         else:

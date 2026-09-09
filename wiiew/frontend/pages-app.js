@@ -46,8 +46,18 @@ function render(s){lastState=s;const r=s.room||{},p=s.phone||{},sen=s.sensor||{}
  else{hero.classList.add('empty');title.textContent='Room empty';text.textContent='Your room is quiet.';label.textContent='CLEAR'}
  const confirm=$('#confirm');if(r.raw_presence&&!r.sustained_presence&&sys.armed){confirm.hidden=false;const d=r.presence_duration_seconds||0,t=r.presence_threshold_seconds||15;$('#confirm-fill').style.width=`${Math.min(100,d/t*100)}%`;$('#confirm-time').textContent=`${Math.floor(d)}s / ${t}s`}else confirm.hidden=true;
  $('#sensor').textContent=sen.online?'Online':'Offline';$('#server').textContent=sen.online?'Online':'Offline';$('#sensor-dot').className=`dot ${sen.online?'online':''}`;$('#server-dot').className=`dot ${sen.online?'online':''}`;
- $('#phone').textContent=p.phone_state==='PHONE_PRESENT'?'Home':p.phone_state==='PHONE_MAYBE_AWAY'?'Sleeping':p.phone_state==='PHONE_AWAY'?'Away':(!p.configured?'Not set':p.is_home?'Home':'Away');
- $('#phone-dot').className=`dot ${p.is_home?'online':''}`;
+  const prox=p.proximity||{};
+  const proxState=prox.state||'UNKNOWN';
+  const proxLabel=proxState==='NEAR'?'🟢 Near (<15 ft)':proxState==='FAR'?'🟠 Far (>15 ft)':'⚪ Proximity unavailable';
+  const phoneText=p.is_trusted_in_room?'In Room (Near)':p.is_home?(proxState==='FAR'?'Home (Far)':'Home (On Wi-Fi)'):(!p.configured?'Not set':'Away');
+  $('#phone').textContent=phoneText;
+  if($('#phone-prox')) $('#phone-prox').textContent=proxLabel;
+  $('#phone-dot').className=`dot ${p.is_trusted_in_room?'online':p.is_home?'online':''}`;
+  if($('#prox-method-val')) $('#prox-method-val').textContent=prox.method==='router_rssi'?'Router RSSI':'Unavailable';
+  if($('#prox-method-hint')) $('#prox-method-hint').textContent=prox.message||'15 ft proximity detection requires router client RSSI.';
+  if($('#prox-signal')) $('#prox-signal').textContent=prox.signal_strength!=null?`${prox.signal_strength} dBm`:'— dBm';
+  if($('#prox-dist')) $('#prox-dist').textContent=prox.distance_estimate_ft!=null?`${prox.distance_estimate_ft} ft`:'— ft';
+  if($('#prox-state')) $('#prox-state').textContent=prox.state||'Unknown';
  $('#arm').querySelector('span:nth-child(2)').textContent=sys.armed?'ARMED':'DISARMED';$('#arm').style.background=sys.armed?'linear-gradient(135deg,rgba(105,230,179,.14),rgba(105,230,179,.05))':'rgba(255,255,255,.035)';
   const mState=r.movement_state||(r.motion_level==='active'?'MOVEMENT_DETECTED':r.raw_presence?'STATIONARY':'NONE');
   const person=$('#person');
@@ -133,6 +143,8 @@ $('#settings').onclick=async()=>{
         $('#debounce').value=cfg.presence_sustained_seconds||15;
         $('#debounce-out').textContent=$('#debounce').value;
       }
+      if($('#prox-enabled')) $('#prox-enabled').checked = (cfg.phone_proximity_enabled ?? true);
+      if($('#prox-boundary')) $('#prox-boundary').value = cfg.phone_boundary_ft || 15;
       return;
     }
   }catch(e){}
@@ -141,6 +153,34 @@ $('#settings').onclick=async()=>{
 $('#close').onclick=()=>modal.hidden=true;
 $('#debounce').oninput=e=>$('#debounce-out').textContent=e.target.value;
 $('#grace').oninput=e=>$('#grace-out').textContent=e.target.value;
+
+if($('#btn-cal-near')){
+  $('#btn-cal-near').onclick=async()=>{
+    const msg=$('#cal-msg');
+    if(msg) msg.textContent='Sampling signal near router...';
+    try{
+      const r=await fetch(apiPath('/api/proximity/calibrate/near'),{method:'POST'});
+      const d=await r.json();
+      if(msg) msg.textContent=d.message||'';
+    }catch(e){
+      if(msg) msg.textContent='Calibration request failed: '+e.message;
+    }
+  };
+}
+if($('#btn-cal-boundary')){
+  $('#btn-cal-boundary').onclick=async()=>{
+    const msg=$('#cal-msg');
+    if(msg) msg.textContent='Sampling signal at 15 ft boundary...';
+    try{
+      const r=await fetch(apiPath('/api/proximity/calibrate/boundary'),{method:'POST'});
+      const d=await r.json();
+      if(msg) msg.textContent=d.message||'';
+    }catch(e){
+      if(msg) msg.textContent='Calibration request failed: '+e.message;
+    }
+  };
+}
+
 if($('#btn-discover-devices')){
   $('#btn-discover-devices').onclick=async()=>{
     const list=$('#discovered-list');
@@ -189,7 +229,9 @@ $('#save').onclick=async()=>{
     trusted_phone_ip:($('#phone-ip')?.value||'').trim(),
     trusted_phone_mac:($('#phone-mac')?.value||'').trim(),
     phone_grace_period_seconds:parseInt($('#grace')?.value||'3',10)*60,
-    presence_sustained_seconds:parseFloat($('#debounce')?.value||'15')
+    presence_sustained_seconds:parseFloat($('#debounce')?.value||'15'),
+    phone_proximity_enabled:$('#prox-enabled')?.checked??true,
+    phone_boundary_ft:parseFloat($('#prox-boundary')?.value||'15')
   };
   try{
     await fetch(apiPath('/api/settings'),{

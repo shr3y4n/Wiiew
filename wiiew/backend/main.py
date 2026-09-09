@@ -291,11 +291,60 @@ async def api_save_settings(new_settings: WiiewSettings):
     global settings
     settings = new_settings
     phone_detector.settings = settings
+    phone_detector.proximity_engine.settings = settings
     decision_engine.settings = settings
     localization_engine.settings = settings
     localization_engine._init_nodes()
     save_settings(settings)
     return {"status": "ok", "settings": settings.model_dump()}
+
+
+@app.post("/api/proximity/calibrate/near")
+async def api_calibrate_near():
+    """Sample trusted phone RSSI near router to calibrate baseline."""
+    target_ip = settings.trusted_phone_ip.strip()
+    target_mac = settings.trusted_phone_mac.strip().lower().replace("-", ":")
+    rssi = await phone_detector.proximity_engine.sample_near_calibration(
+        samples=5,
+        delay_s=0.5,
+        mac=target_mac,
+        ip=target_ip,
+    )
+    if rssi is None:
+        return {
+            "status": "error",
+            "message": "Router client RSSI unavailable. Calibration requires router signal telemetry.",
+            "calibrated": False,
+        }
+    return {
+        "status": "ok",
+        "calibrated_near_rssi": rssi,
+        "message": f"Near calibration stored ({rssi} dBm).",
+    }
+
+
+@app.post("/api/proximity/calibrate/boundary")
+async def api_calibrate_boundary():
+    """Sample trusted phone RSSI at the 15-ft boundary."""
+    target_ip = settings.trusted_phone_ip.strip()
+    target_mac = settings.trusted_phone_mac.strip().lower().replace("-", ":")
+    rssi = await phone_detector.proximity_engine.sample_boundary_calibration(
+        samples=5,
+        delay_s=0.5,
+        mac=target_mac,
+        ip=target_ip,
+    )
+    if rssi is None:
+        return {
+            "status": "error",
+            "message": "Router client RSSI unavailable. Calibration requires router signal telemetry.",
+            "calibrated": False,
+        }
+    return {
+        "status": "ok",
+        "calibrated_boundary_rssi": rssi,
+        "message": f"15 ft boundary calibration stored ({rssi} dBm).",
+    }
 
 
 @app.get("/api/events")

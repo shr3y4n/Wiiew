@@ -185,6 +185,23 @@ class WiiewServiceManager:
             return match.group(0)
         return None
 
+    def detect_pre_existing_cloudflare_url(self) -> Optional[str]:
+        """Check if an active cloudflared tunnel is already running and query its metric endpoint."""
+        for port in range(20240, 20265):
+            try:
+                req = urllib.request.Request(f"http://127.0.0.1:{port}/metrics", headers={"User-Agent": "Wiiew"})
+                with urllib.request.urlopen(req, timeout=0.3) as resp:
+                    content = resp.read().decode("utf-8", errors="ignore")
+                    for line in content.splitlines():
+                        if "userHostname" in line:
+                            found = self.extract_cloudflare_url(line)
+                            if found:
+                                if self.check_http_status(f"{found}/api/status", timeout=2.5):
+                                    return found
+            except Exception:
+                continue
+        return None
+
     # -----------------------------------------------------------------------
     # Lifecycle: Start All
     # -----------------------------------------------------------------------
@@ -323,6 +340,22 @@ class WiiewServiceManager:
             # 4. Cloudflare Start
             self.status.cloudflare = "STARTING"
             self._notify_status(status_cb)
+
+            # Check if a working Cloudflare tunnel is already active
+            pre_cf_url = self.detect_pre_existing_cloudflare_url()
+            if pre_cf_url:
+                self._log("Cloudflare tunnel already running (pre-existing)", log_cb)
+                self.pre_existing.add("cloudflare")
+                self.status.public_url = pre_cf_url
+                self.status.cloudflare = "ONLINE"
+                self._log("Tunnel online", log_cb)
+                self._log(f"Public URL: {pre_cf_url}", log_cb)
+                self._notify_status(status_cb)
+                self._log("Wiiew ready", log_cb)
+                self.open_wiiew(pre_cf_url)
+                self._log(f"Opened Wiiew in browser: {PUBLIC_FRONTEND_URL}?api={pre_cf_url}", log_cb)
+                return True
+
             if not self.cloudflared_path.exists():
                 # Check PATH as fallback
                 which_cf = subprocess.run(["where", "cloudflared"], stdout=subprocess.PIPE, text=True)
@@ -436,6 +469,8 @@ class WiiewServiceManager:
                     self._kill_process_tree(pid)
                 self.status.cloudflare = "OFFLINE"
                 self.status.public_url = ""
+            elif "cloudflare" in self.pre_existing:
+                self._log("Preserved pre-existing Cloudflare tunnel (not started by launcher)", log_cb)
 
             # 2. Stop FastAPI (only if launcher-owned)
             if "fastapi" in self.launcher_procs:

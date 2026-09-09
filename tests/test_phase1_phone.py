@@ -37,6 +37,7 @@ def make_test_settings(grace_period: int = 120) -> WiiewSettings:
         presence_sustained_seconds=15.0,
         presence_clear_seconds=10.0,
         phone_grace_period_seconds=grace_period,
+        phone_proximity_enabled=False,
         is_armed=True,
     )
 

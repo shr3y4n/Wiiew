@@ -26,6 +26,15 @@ class WiiewSettings(BaseModel):
     trusted_phone_name: str = Field(default="My Phone", description="Friendly device name")
     phone_grace_period_seconds: int = Field(default=180, description="Grace period for phone Wi-Fi sleep in seconds")
 
+    # Proximity Boundary (Router 15 ft perimeter)
+    phone_proximity_enabled: bool = Field(default=True, description="Enforce router proximity boundary for alert suppression")
+    phone_boundary_ft: float = Field(default=15.0, description="Physical boundary distance in feet")
+    phone_boundary_m: float = Field(default=4.572, description="Physical boundary distance in meters (15 ft = 4.572 m)")
+    proximity_grace_seconds: int = Field(default=10, description="Hysteresis debounce duration in seconds")
+    proximity_method: str = Field(default="unavailable", description="Proximity measurement method: router_rssi or unavailable")
+    calibrated_near_rssi: Optional[float] = Field(default=None, description="Calibrated RSSI at router")
+    calibrated_boundary_rssi: Optional[float] = Field(default=None, description="Calibrated RSSI at 15 ft boundary")
+
     # Presence Hysteresis & Debounce
     presence_sustained_seconds: float = Field(default=15.0, description="Required sustained CSI presence before alert")
     presence_clear_seconds: float = Field(default=10.0, description="Required sustained absence before clearing presence")

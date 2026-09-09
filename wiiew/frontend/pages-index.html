@@ -48,7 +48,7 @@
       <section class="status-grid">
         <article class="stat-card"><span class="stat-icon">◉</span><div><small>CSI SENSOR</small><strong id="sensor">Offline</strong></div><em id="sensor-dot" class="dot"></em></article>
         <article class="stat-card"><span class="stat-icon">◌</span><div><small>RUVIEW</small><strong id="server">Offline</strong></div><em id="server-dot" class="dot"></em></article>
-        <article class="stat-card"><span class="stat-icon">⌁</span><div><small>TRUSTED PHONE</small><strong id="phone">Not set</strong></div><em id="phone-dot" class="dot"></em></article>
+        <article class="stat-card"><span class="stat-icon">⌁</span><div><small>TRUSTED PHONE</small><strong id="phone">Not set</strong><small id="phone-prox" style="display:block;font-size:9px;color:var(--dim);margin-top:2px;">Proximity —</small></div><em id="phone-dot" class="dot"></em></article>
       </section>
 
       <section class="control-row">
@@ -81,6 +81,43 @@
       <label>Trusted phone MAC (optional stable ID) <input id="phone-mac" placeholder="e.g. de:f3:d1:75:ab:bf"></label>
       <button id="btn-discover-devices" type="button" class="secondary-btn" style="width:100%;margin-top:6px;min-height:38px;font-size:12px;border-radius:10px;">Scan Home Network for My Phone</button>
       <div id="discovered-list" style="margin-top:8px;max-height:140px;overflow-y:auto;display:none;"></div>
+      
+      <!-- Physical Proximity Boundary Section -->
+      <div class="setting-group" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line);">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:6px;">
+          <input type="checkbox" id="prox-enabled" checked style="width:16px;height:16px;accent-color:var(--green);">
+          <span style="font-weight:600;font-size:12px;">Enforce 15 ft Router Proximity Boundary</span>
+        </label>
+        <p class="hint" style="margin-top:0;">When enabled, being on Wi-Fi alone will NOT suppress alerts unless your phone is within the calibrated boundary.</p>
+        <label>Boundary Distance (ft) <input id="prox-boundary" type="number" min="5" max="50" step="1" value="15" style="margin-top:4px;"></label>
+        
+        <div id="prox-method-badge" style="margin-top:8px;font-size:11px;color:var(--muted);background:rgba(255,255,255,0.04);padding:8px 10px;border-radius:8px;border:1px solid var(--line);">
+          Method: <b id="prox-method-val" style="color:var(--text);">Unavailable</b>
+          <span id="prox-method-hint" style="display:block;color:var(--dim);font-size:10px;margin-top:3px;">15 ft proximity detection requires router client RSSI.</span>
+        </div>
+
+        <div style="display:flex;gap:8px;margin-top:8px;">
+          <div style="flex:1;background:rgba(255,255,255,0.02);padding:6px;border-radius:6px;border:1px solid var(--line);text-align:center;">
+            <small style="color:var(--dim);display:block;font-size:10px;">Signal</small>
+            <strong id="prox-signal" style="font-size:12px;color:var(--text);">— dBm</strong>
+          </div>
+          <div style="flex:1;background:rgba(255,255,255,0.02);padding:6px;border-radius:6px;border:1px solid var(--line);text-align:center;">
+            <small style="color:var(--dim);display:block;font-size:10px;">Est. Distance</small>
+            <strong id="prox-dist" style="font-size:12px;color:var(--text);">— ft</strong>
+          </div>
+          <div style="flex:1;background:rgba(255,255,255,0.02);padding:6px;border-radius:6px;border:1px solid var(--line);text-align:center;">
+            <small style="color:var(--dim);display:block;font-size:10px;">Proximity</small>
+            <strong id="prox-state" style="font-size:12px;color:var(--text);">Unknown</strong>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:8px;margin-top:8px;">
+          <button id="btn-cal-near" type="button" class="secondary-btn" style="flex:1;font-size:11px;min-height:34px;">Calibrate Near</button>
+          <button id="btn-cal-boundary" type="button" class="secondary-btn" style="flex:1;font-size:11px;min-height:34px;">Calibrate 15 ft</button>
+        </div>
+        <p id="cal-msg" class="hint" style="font-size:11px;margin-top:4px;"></p>
+      </div>
+
       <label>Presence confirmation <output><b id="debounce-out">15</b> sec</output><input id="debounce" type="range" min="5" max="45" step="5" value="15"></label>
       <label>Phone-away grace <output><b id="grace-out">3</b> min</output><input id="grace" type="range" min="1" max="10" value="3"></label>
       <div class="modal-actions"><button id="save" class="save-btn">Save</button><button id="push" class="secondary-btn">Enable notifications</button></div>

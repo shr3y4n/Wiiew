@@ -304,15 +304,23 @@ function updateDashboard(state) {
 
   labelPhoneName.textContent = phone.device_name || 'My Phone';
 
+  const prox = phone.proximity || {};
+  const proxState = prox.state || 'UNKNOWN';
+  const proxText = proxState === 'NEAR' ? 'Near (<15 ft)' : proxState === 'FAR' ? 'Far (>15 ft)' : 'Proximity unavail.';
+
   if (!phone.configured || phone.phone_state === 'UNKNOWN') {
     badgePhone.className = 'status-pill pill-gray';
     badgePhone.textContent = 'UNSET';
     phoneSubtext.textContent = 'Configure in settings';
-  } else if (phone.phone_state === 'PHONE_PRESENT' || (phone.is_home && (!phone.status_label || !phone.status_label.includes('SLEEPING')))) {
+  } else if (phone.is_trusted_in_room) {
     badgePhone.className = 'status-pill pill-green';
-    badgePhone.textContent = 'HOME';
-    phoneSubtext.textContent = 'Active on Wi-Fi';
-  } else if (phone.phone_state === 'PHONE_MAYBE_AWAY' || (phone.is_home && phone.status_label && phone.status_label.includes('SLEEPING'))) {
+    badgePhone.textContent = 'IN ROOM';
+    phoneSubtext.textContent = 'Near (<15 ft boundary)';
+  } else if (phone.phone_state === 'PHONE_PRESENT' || phone.is_home) {
+    badgePhone.className = (proxState === 'FAR' ? 'status-pill pill-amber' : 'status-pill pill-green');
+    badgePhone.textContent = (proxState === 'FAR' ? 'AWAY (FAR)' : 'ON WI-FI');
+    phoneSubtext.textContent = (proxState === 'FAR' ? 'Outside 15 ft boundary' : `${proxText}`);
+  } else if (phone.phone_state === 'PHONE_MAYBE_AWAY') {
     badgePhone.className = 'status-pill pill-amber';
     badgePhone.textContent = 'SLEEPING';
     const minLeft = Math.ceil((phone.remaining_grace_seconds || 0) / 60);
@@ -322,6 +330,15 @@ function updateDashboard(state) {
     badgePhone.textContent = 'AWAY';
     const ago = phone.last_seen_seconds_ago;
     phoneSubtext.textContent = ago ? `Last seen ${Math.floor(ago / 60)}m ago` : 'Not seen';
+  }
+
+  // Update live settings modal fields if open
+  if (document.getElementById('cfg-prox-method')) {
+    document.getElementById('cfg-prox-method').textContent = prox.method === 'router_rssi' ? 'Router RSSI' : 'Unavailable';
+    document.getElementById('cfg-prox-msg').textContent = prox.message || '15 ft proximity detection requires router client RSSI.';
+    document.getElementById('cfg-prox-signal').textContent = prox.signal_strength != null ? `${prox.signal_strength} dBm` : '— dBm';
+    document.getElementById('cfg-prox-dist').textContent = prox.distance_estimate_ft != null ? `${prox.distance_estimate_ft} ft` : '— ft';
+    document.getElementById('cfg-prox-state').textContent = prox.state || 'Unknown';
   }
 
   // CSI Movement Telemetry & Direction
@@ -560,6 +577,13 @@ async function loadSettings() {
     const deb = currentSettings.presence_sustained_seconds || 15;
     document.getElementById('cfg-debounce-slider').value = deb;
     document.getElementById('cfg-debounce-val').textContent = `${deb} sec`;
+
+    if (document.getElementById('cfg-prox-enabled')) {
+      document.getElementById('cfg-prox-enabled').checked = (currentSettings.phone_proximity_enabled ?? true);
+    }
+    if (document.getElementById('cfg-prox-boundary')) {
+      document.getElementById('cfg-prox-boundary').value = currentSettings.phone_boundary_ft || 15;
+    }
   } catch (e) {
     console.error('[Settings] Error loading:', e);
   }
@@ -570,6 +594,30 @@ document.getElementById('cfg-grace-slider')?.addEventListener('input', (e) => {
 });
 document.getElementById('cfg-debounce-slider')?.addEventListener('input', (e) => {
   document.getElementById('cfg-debounce-val').textContent = `${e.target.value} sec`;
+});
+
+// Calibration Listeners
+document.getElementById('btn-cfg-cal-near')?.addEventListener('click', async () => {
+  const msg = document.getElementById('cfg-cal-msg');
+  if (msg) msg.textContent = 'Sampling signal near router...';
+  try {
+    const res = await fetch(getApiUrl('/api/proximity/calibrate/near'), { method: 'POST' });
+    const d = await res.json();
+    if (msg) msg.textContent = d.message || '';
+  } catch (e) {
+    if (msg) msg.textContent = 'Calibration error: ' + e.message;
+  }
+});
+document.getElementById('btn-cfg-cal-boundary')?.addEventListener('click', async () => {
+  const msg = document.getElementById('cfg-cal-msg');
+  if (msg) msg.textContent = 'Sampling signal at 15 ft boundary...';
+  try {
+    const res = await fetch(getApiUrl('/api/proximity/calibrate/boundary'), { method: 'POST' });
+    const d = await res.json();
+    if (msg) msg.textContent = d.message || '';
+  } catch (e) {
+    if (msg) msg.textContent = 'Calibration error: ' + e.message;
+  }
 });
 
 document.getElementById('btn-save-settings')?.addEventListener('click', async () => {
@@ -587,6 +635,8 @@ document.getElementById('btn-save-settings')?.addEventListener('click', async ()
   currentSettings.trusted_phone_mac = document.getElementById('cfg-phone-mac').value.trim();
   currentSettings.phone_grace_period_seconds = parseInt(document.getElementById('cfg-grace-slider').value, 10);
   currentSettings.presence_sustained_seconds = parseFloat(document.getElementById('cfg-debounce-slider').value);
+  currentSettings.phone_proximity_enabled = document.getElementById('cfg-prox-enabled')?.checked ?? true;
+  currentSettings.phone_boundary_ft = parseFloat(document.getElementById('cfg-prox-boundary')?.value || 15);
 
   try {
     await fetch(getApiUrl('/api/settings'), {

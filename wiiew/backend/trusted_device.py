@@ -15,6 +15,7 @@ import time
 from typing import Dict, List, Optional
 
 from .config import WiiewSettings
+from .proximity import ProximityEngine, ProximityState, ProximityTelemetry
 
 
 def get_arp_cache() -> Dict[str, str]:
@@ -84,33 +85,63 @@ class TrustedDeviceDetector:
 
     def __init__(self, settings: WiiewSettings) -> None:
         self.settings = settings
+        self.proximity_engine = ProximityEngine(settings)
         self.last_seen_timestamp: Optional[float] = None
         self.last_seen_method: Optional[str] = None
         self.is_home: bool = False
+        self._is_trusted_in_room_override: Optional[bool] = None
+        self.network_state: str = "NETWORK_UNKNOWN"
         self.phone_state: str = "UNKNOWN"
         self.status_label: str = "NOT CONFIGURED"
         self._lock = asyncio.Lock()
+
+    @property
+    def is_trusted_in_room(self) -> bool:
+        """
+        Determine whether the trusted phone authorizes intrusion alert suppression.
+        If proximity enabled: requires NETWORK_PRESENT (is_home) + PROXIMITY_NEAR.
+        If proximity is UNKNOWN or FAR: user is considered AWAY from the room.
+        If proximity is disabled: falls back to is_home.
+        """
+        if self._is_trusted_in_room_override is not None:
+            return self._is_trusted_in_room_override
+        if self.settings.phone_proximity_enabled:
+            is_near = (self.proximity_engine.current_state == ProximityState.NEAR)
+            return bool(self.is_home and is_near)
+        return bool(self.is_home)
+
+    @is_trusted_in_room.setter
+    def is_trusted_in_room(self, val: Optional[bool]) -> None:
+        self._is_trusted_in_room_override = val
+
+    def _resolve_authorization(self) -> None:
+        """Clear manual override to allow dynamic state resolution."""
+        self._is_trusted_in_room_override = None
 
     def heartbeat(self, source: str = "pwa") -> None:
         """Called when PWA on phone sends a live heartbeat or user taps I'm Home."""
         self.last_seen_timestamp = time.time()
         self.last_seen_method = f"heartbeat ({source})"
+        self.network_state = "NETWORK_PRESENT"
         self.phone_state = "PHONE_PRESENT"
         self.is_home = True
         self.status_label = "HOME (ACTIVE)"
+        self._resolve_authorization()
 
     async def check_presence(self) -> bool:
         """
         Execute one probe cycle.
-        Returns True if phone is considered home (accounting for grace period).
+        Returns True if phone is on the network (accounting for grace period).
         """
         target_ip = self.settings.trusted_phone_ip.strip()
         target_mac = self.settings.trusted_phone_mac.strip().lower().replace("-", ":")
 
         if not target_ip and not target_mac:
+            self.network_state = "NETWORK_UNKNOWN"
             self.phone_state = "UNKNOWN"
             self.status_label = "NOT CONFIGURED"
             self.is_home = False
+            self._is_trusted_in_room_override = None
             return False
 
         detected_now = False
@@ -141,32 +172,43 @@ class TrustedDeviceDetector:
         if detected_now:
             self.last_seen_timestamp = now
             self.last_seen_method = method_now
+            self.network_state = "NETWORK_PRESENT"
             self.phone_state = "PHONE_PRESENT"
             self.is_home = True
             self.status_label = "HOME (ACTIVE)"
-            return True
-
-        # 3. Grace period evaluation (Requirement 7: Phone sleep tolerance)
-        if self.last_seen_timestamp is not None:
-            elapsed = now - self.last_seen_timestamp
-            grace = float(self.settings.phone_grace_period_seconds)
-            if elapsed <= 15:
-                self.phone_state = "PHONE_PRESENT"
-                self.is_home = True
-                self.status_label = "HOME (ACTIVE)"
-            elif elapsed <= grace:
-                self.phone_state = "PHONE_MAYBE_AWAY"
-                self.is_home = True
-                self.status_label = "HOME (SLEEPING)"
+        else:
+            # 3. Grace period evaluation (Requirement 7: Phone sleep tolerance)
+            if self.last_seen_timestamp is not None:
+                elapsed = now - self.last_seen_timestamp
+                grace = float(self.settings.phone_grace_period_seconds)
+                if elapsed <= 15:
+                    self.network_state = "NETWORK_PRESENT"
+                    self.phone_state = "PHONE_PRESENT"
+                    self.is_home = True
+                    self.status_label = "HOME (ACTIVE)"
+                elif elapsed <= grace:
+                    self.network_state = "NETWORK_PRESENT"
+                    self.phone_state = "PHONE_MAYBE_AWAY"
+                    self.is_home = True
+                    self.status_label = "HOME (SLEEPING)"
+                else:
+                    self.network_state = "NETWORK_AWAY"
+                    self.phone_state = "PHONE_AWAY"
+                    self.is_home = False
+                    self.status_label = "AWAY"
             else:
+                self.network_state = "NETWORK_AWAY"
                 self.phone_state = "PHONE_AWAY"
                 self.is_home = False
                 self.status_label = "AWAY"
-        else:
-            self.phone_state = "PHONE_AWAY"
-            self.is_home = False
-            self.status_label = "AWAY"
 
+        # 4. Proximity evaluation
+        await self.proximity_engine.update(
+            mac=target_mac,
+            ip=target_ip,
+            network_present=(self.network_state == "NETWORK_PRESENT"),
+        )
+        self._resolve_authorization()
         return self.is_home
 
     def get_status(self) -> Dict:
@@ -175,6 +217,7 @@ class TrustedDeviceDetector:
         last_seen_ago = int(now - self.last_seen_timestamp) if self.last_seen_timestamp else None
         grace = self.settings.phone_grace_period_seconds
         remaining_grace = max(0, int(grace - last_seen_ago)) if (last_seen_ago is not None and last_seen_ago <= grace) else 0
+        prox_data = self.proximity_engine.get_telemetry().to_dict()
 
         return {
             "configured": bool(self.settings.trusted_phone_ip or self.settings.trusted_phone_mac),
@@ -182,8 +225,11 @@ class TrustedDeviceDetector:
             "ip": self.settings.trusted_phone_ip,
             "mac": self.settings.trusted_phone_mac,
             "phone_state": self.phone_state,
+            "network_state": self.network_state,
+            "proximity": prox_data,
             "online": (self.phone_state == "PHONE_PRESENT"),
             "is_home": self.is_home,
+            "is_trusted_in_room": self.is_trusted_in_room,
             "status_label": self.status_label,
             "last_seen_seconds_ago": last_seen_ago,
             "last_seen_method": self.last_seen_method,
