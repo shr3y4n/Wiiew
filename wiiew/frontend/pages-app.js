@@ -1,8 +1,30 @@
 const $=s=>document.querySelector(s);let ws=null,deferred=null,lastState=null;
 const stored=localStorage.getItem('wiiew_api');
-const API=()=>{const v=localStorage.getItem('wiiew_api')||localStorage.getItem('wiiew_backend_url');if(v)return v.replace(/\/$/,'');if(location.hostname.endsWith('github.io'))return '';return location.origin};
-const apiPath=p=>`${API()}${p}`;
-const wsPath=()=>{const base=API();if(!base)return '';const u=new URL(base);u.protocol=u.protocol==='https:'?'wss:':'ws:';return `${u.origin}/ws/live`};
+const API=()=>{
+  let v = localStorage.getItem('wiiew_api') || localStorage.getItem('wiiew_backend_url');
+  if (v && v.trim()) {
+    v = v.trim().replace(/\/+$/, '');
+    if (!v.startsWith('http://') && !v.startsWith('https://')) {
+      v = 'https://' + v;
+    }
+    return v;
+  }
+  if (location.hostname.endsWith('github.io')) return '';
+  return location.origin;
+};
+const apiPath=p=>{const b=API();if(!b)return p;return `${b}${p.startsWith('/')?'':'/'}${p}`};
+const wsPath=()=>{
+  const base=API();
+  if(!base)return '';
+  try{
+    const u=new URL(base);
+    u.protocol=u.protocol==='https:'?'wss:':'ws:';
+    return `${u.origin}/ws/live`;
+  }catch(err){
+    console.error('[WS] Invalid backend URL:',err);
+    return '';
+  }
+};
 function setConn(ok){const e=$('#connection');e.classList.toggle('online',ok);e.innerHTML=`<i></i> ${ok?'Live':'Offline'}`}
 function fmtAgo(v){if(v==null)return'—';if(v<5)return'just now';if(v<60)return`${Math.floor(v)}s ago`;return`${Math.floor(v/60)}m ago`}
 function render(s){lastState=s;const r=s.room||{},p=s.phone||{},sen=s.sensor||{},sys=s.system||{};const hero=$('#hero'),title=$('#state-title'),text=$('#state-text'),label=$('#visual-label');hero.className='hero';
@@ -24,8 +46,18 @@ function connect(){const url=wsPath();if(!url){setConn(false);return}try{ws?.clo
 async function events(){try{const r=await fetch(apiPath('/api/events'));const j=await r.json();const list=$('#events');if(!j.events?.length){list.innerHTML='<div class="muted">No events yet.</div>';return}list.innerHTML=j.events.slice(0,12).map(e=>`<div class="event ${e.type==='ALERT_TRIGGERED'||e.type==='ENTRY_DETECTED'?'alert':'safe'}"><b>${String(e.type||'EVENT').replaceAll('_',' ')}</b><span>${e.message||''} · ${e.time_iso||''}</span></div>`).join('')}catch{}}
 $('#arm').onclick=async()=>{try{await fetch(apiPath('/api/arm'),{method:'POST'});status();events()}catch{}};$('#home').onclick=async()=>{try{await fetch(apiPath('/api/heartbeat'),{method:'POST'});status()}catch{}};$('#refresh').onclick=events;
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferred=e;$('#install').hidden=false});$('#install').onclick=async()=>{if(deferred){deferred.prompt();await deferred.userChoice;deferred=null;$('#install').hidden=true}};
-const modal=$('#modal');$('#settings').onclick=()=>{modal.hidden=false;$('#api').value=localStorage.getItem('wiiew_api')||'';$('#phone-name').value=localStorage.getItem('wiiew_phone_name')||'My Phone'};$('#close').onclick=()=>modal.hidden=true;$('#debounce').oninput=e=>$('#debounce-out').textContent=e.target.value;$('#grace').oninput=e=>$('#grace-out').textContent=e.target.value;
-$('#save').onclick=async()=>{const val=$('#api').value.trim().replace(/\/$/,'');if(val)localStorage.setItem('wiiew_api',val);else localStorage.removeItem('wiiew_api');localStorage.setItem('wiiew_phone_name',$('#phone-name').value.trim()||'My Phone');$('#settings-msg').textContent='Saved. Connecting…';modal.hidden=true;connect();status()};
+const modal=$('#modal');$('#settings').onclick=()=>{modal.hidden=false;$('#api').value=localStorage.getItem('wiiew_api')||localStorage.getItem('wiiew_backend_url')||'';$('#phone-name').value=localStorage.getItem('wiiew_phone_name')||'My Phone'};$('#close').onclick=()=>modal.hidden=true;$('#debounce').oninput=e=>$('#debounce-out').textContent=e.target.value;$('#grace').oninput=e=>$('#grace-out').textContent=e.target.value;
+$('#save').onclick=async()=>{
+  let val=$('#api').value.trim().replace(/\/+$/,'');
+  if(val&&!val.startsWith('http://')&&!val.startsWith('https://')){val='https://'+val;}
+  if(val){localStorage.setItem('wiiew_api',val);localStorage.setItem('wiiew_backend_url',val);}
+  else{localStorage.removeItem('wiiew_api');localStorage.removeItem('wiiew_backend_url');}
+  localStorage.setItem('wiiew_phone_name',$('#phone-name').value.trim()||'My Phone');
+  $('#settings-msg').textContent='Saved. Connecting…';
+  modal.hidden=true;
+  connect();
+  status();
+};
 async function enablePush(){if(!('serviceWorker'in navigator)||!('PushManager'in window)){alert('Push notifications are not supported by this browser.');return}try{const reg=await navigator.serviceWorker.ready;const keyRes=await fetch(apiPath('/api/push/public-key'));const {publicKey}=await keyRes.json();const perm=await Notification.requestPermission();if(perm!=='granted')return;const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:base64ToUint8(publicKey)});await fetch(apiPath('/api/push/subscribe'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(sub)});$('#settings-msg').textContent='Notifications enabled.'}catch(e){$('#settings-msg').textContent='Could not enable notifications: '+e.message}}
 function base64ToUint8(s){const pad='='.repeat((4-s.length%4)%4),raw=atob((s+pad).replace(/-/g,'+').replace(/_/g,'/'));return Uint8Array.from(raw,c=>c.charCodeAt(0))}$('#push').onclick=enablePush;
 if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(console.warn);

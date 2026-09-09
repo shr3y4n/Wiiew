@@ -157,14 +157,9 @@ app = FastAPI(title="Wiiew Room Intrusion Monitor", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://shr3y4n.github.io",
-        "http://localhost:8000",
-        "http://127.0.0.1:8000",
-    ],
-    allow_origin_regex=r"^https?://(192\.168\.\d+\.\d+|localhost|127\.0\.0\.1|shr3y4n\.github\.io)(:\d+)?$",
+    allow_origins=["*"],
     allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
@@ -299,7 +294,7 @@ async def ws_live(websocket: WebSocket):
         while True:
             # Keep-alive receive
             _ = await websocket.receive_text()
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, Exception):
         pass
     finally:
         connected_ws_clients.discard(websocket)

@@ -8,9 +8,13 @@
 const DEFAULT_LAN_BACKEND = 'http://192.168.1.100:8000';
 
 function getBackendBaseUrl() {
-  const saved = localStorage.getItem('wiiew_backend_url');
+  let saved = localStorage.getItem('wiiew_backend_url') || localStorage.getItem('wiiew_api');
   if (saved && saved.trim()) {
-    return saved.trim().replace(/\/+$/, '');
+    saved = saved.trim().replace(/\/+$/, '');
+    if (!saved.startsWith('http://') && !saved.startsWith('https://')) {
+      saved = 'https://' + saved;
+    }
+    return saved;
   }
 
   // Automatic heuristic:
@@ -32,9 +36,14 @@ function getApiUrl(path) {
 function getWsUrl(path) {
   const base = getBackendBaseUrl();
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
-  const url = new URL(base);
-  const proto = url.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${proto}//${url.host}${cleanPath}`;
+  try {
+    const url = new URL(base);
+    const proto = url.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${proto}//${url.host}${cleanPath}`;
+  } catch (err) {
+    console.error('[WS] Invalid backend URL:', err);
+    return '';
+  }
 }
 
 // --- Global State ---
