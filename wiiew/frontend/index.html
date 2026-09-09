@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0a0e17">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="description" content="Wiiew - Room Intrusion Monitor with Trusted-Device Safe Card">
+  
+  <title>Wiiew — Room Monitor</title>
+  
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Top Header -->
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-logo">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 12.55a11 11 0 0 1 14.08 0"></path>
+            <path d="M1.42 9a16 16 0 0 1 21.16 0"></path>
+            <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
+            <circle cx="12" cy="20" r="1"></circle>
+          </svg>
+        </div>
+        <span class="brand-title">Wiiew</span>
+      </div>
+      
+      <div class="header-actions">
+        <button id="btn-install" class="btn-icon" title="Install App" style="display: none;">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+        </button>
+        <button id="btn-settings-open" class="btn-icon" title="Settings">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Room Monitor Dashboard Card -->
+    <main class="dashboard-main">
+      <!-- Big Hero Status Card -->
+      <section id="hero-badge" class="hero-status state-empty">
+        <div class="status-indicator">
+          <span class="status-dot"></span>
+          <span id="status-title" class="status-title">ROOM EMPTY</span>
+        </div>
+        <p id="status-subtitle" class="status-subtitle">Room is empty and quiet.</p>
+        
+        <!-- Live Hysteresis Progress (shows when presence starts debouncing) -->
+        <div id="debounce-bar-container" class="debounce-container" style="display: none;">
+          <div class="debounce-label">
+            <span>Confirming presence...</span>
+            <span id="debounce-timer">0s</span>
+          </div>
+          <div class="debounce-track">
+            <div id="debounce-fill" class="debounce-fill" style="width: 0%;"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Sensor & Safe-Card Quick Cards -->
+      <section class="telemetry-panel">
+        <div class="telemetry-row">
+          <div class="telemetry-label">
+            <span class="row-icon sensor-icon"></span>
+            <span>CSI Sensor</span>
+          </div>
+          <span id="badge-sensor" class="status-pill pill-green">ONLINE</span>
+        </div>
+
+        <div class="telemetry-row">
+          <div class="telemetry-label">
+            <span class="row-icon server-icon"></span>
+            <span>RuView Server</span>
+          </div>
+          <span id="badge-server" class="status-pill pill-green">ONLINE</span>
+        </div>
+
+        <div class="telemetry-row">
+          <div class="telemetry-label">
+            <span class="row-icon phone-icon"></span>
+            <span id="label-phone-name">My Phone</span>
+          </div>
+          <div class="phone-status-wrap">
+            <span id="badge-phone" class="status-pill pill-green">HOME</span>
+            <span id="phone-subtext" class="telemetry-subtext">Active</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Arm / Disarm & Safe-Card Pulse -->
+      <section class="control-actions">
+        <button id="btn-arm-toggle" class="btn-primary btn-armed">
+          <span id="btn-arm-icon" class="btn-icon-dot"></span>
+          <span id="btn-arm-text">SYSTEM ARMED</span>
+        </button>
+
+        <button id="btn-heartbeat" class="btn-secondary" title="Signal Safe Card presence from this device">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+          </svg>
+          <span>I'm Home (Safe Card)</span>
+        </button>
+      </section>
+
+      <!-- Subtle OFDM Subcarrier Waterfall/Sparkline -->
+      <section class="subcarrier-section">
+        <div class="subcarrier-header">
+          <span>OFDM Subcarriers (52 tones)</span>
+          <span id="subcarrier-metrics">-39 dBm | 128 sc</span>
+        </div>
+        <div id="subcarrier-visualizer" class="subcarrier-bars"></div>
+      </section>
+
+      <!-- Last Activity -->
+      <div class="footer-info">
+        <span id="last-activity-text">Last activity: Just now</span>
+        <span class="dot-separator">•</span>
+        <span id="ws-latency-text">Live 1 Hz</span>
+      </div>
+
+      <!-- Recent Event History Log -->
+      <section class="history-section">
+        <div class="history-header">
+          <h3>Activity Log</h3>
+          <button id="btn-refresh-events" class="btn-link">Refresh</button>
+        </div>
+        <div id="event-list" class="event-list">
+          <div class="event-placeholder">No intrusion events recorded.</div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal-backdrop" style="display: none;">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h2>Wiiew Settings</h2>
+          <button id="btn-settings-close" class="btn-close">&times;</button>
+        </div>
+
+        <div class="modal-body">
+          <!-- Trusted Phone Config -->
+          <div class="setting-group">
+            <label class="setting-title">Trusted Phone (Safe Card)</label>
+            <p class="setting-desc">Presence of this device on your home Wi-Fi suppresses false alerts.</p>
+            
+            <div class="input-field">
+              <label>Device Name</label>
+              <input type="text" id="cfg-phone-name" placeholder="My Phone" value="My Phone">
+            </div>
+
+            <div class="input-field">
+              <label>Phone LAN IP Address</label>
+              <input type="text" id="cfg-phone-ip" placeholder="192.168.1.103">
+            </div>
+
+            <div class="input-field">
+              <label>Phone MAC Address (Optional)</label>
+              <input type="text" id="cfg-phone-mac" placeholder="7c:4d:8f:94:53:74">
+            </div>
+
+            <button id="btn-discover-devices" class="btn-secondary btn-sm">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <span>Scan Home Network for My Phone</span>
+            </button>
+            <div id="discovered-devices-list" class="discovered-devices" style="display: none;"></div>
+          </div>
+
+          <!-- Sleep Grace Period -->
+          <div class="setting-group">
+            <label class="setting-title">Phone Sleep Grace Period</label>
+            <p class="setting-desc">Tolerates locked smartphone Wi-Fi sleep before assuming you left.</p>
+            <div class="slider-row">
+              <input type="range" id="cfg-grace-slider" min="60" max="600" step="30" value="180">
+              <span id="cfg-grace-val">3 min</span>
+            </div>
+          </div>
+
+          <!-- Sustained Presence Debounce -->
+          <div class="setting-group">
+            <label class="setting-title">Sustained Presence Threshold</label>
+            <p class="setting-desc">Required continuous CSI disturbance before declaring room presence.</p>
+            <div class="slider-row">
+              <input type="range" id="cfg-debounce-slider" min="5" max="45" step="5" value="15">
+              <span id="cfg-debounce-val">15 sec</span>
+            </div>
+          </div>
+
+          <!-- Web Push Notifications -->
+          <div class="setting-group">
+            <label class="setting-title">Mobile Push Notifications</label>
+            <p class="setting-desc">Receive intrusion notifications on this phone even with the app closed.</p>
+            <div class="push-actions">
+              <button id="btn-enable-push" class="btn-primary btn-sm">Enable Web Push</button>
+              <button id="btn-test-push" class="btn-secondary btn-sm">Send Test Push</button>
+            </div>
+            <p id="push-status-msg" class="telemetry-subtext"></p>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button id="btn-save-settings" class="btn-primary">Save Settings</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

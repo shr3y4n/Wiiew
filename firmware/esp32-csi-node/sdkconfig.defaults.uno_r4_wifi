@@ -1,0 +1,65 @@
+# Arduino UNO R4 WiFi (ESP32-S3-MINI-1-N8) Production Configuration Overlay
+#
+# Hardware profile:
+#   - SoC: ESP32-S3 (Xtensa dual-core LX7 @ 240 MHz, 2.4 GHz 802.11b/g/n)
+#   - Flash: 8 MB embedded Quad SPI (ESP32-S3-MINI-1-N8)
+#   - PSRAM: NONE (0 MB)
+#   - Display: NONE (no RM67162 AMOLED; board has 12x8 LED matrix driven by RA4M1)
+#   - Console / USB: Native USB Serial/JTAG controller via USB-C
+#
+# Build (Docker — recommended):
+#   MSYS_NO_PATHCONV=1 docker run --rm \
+#     -v "$(pwd)/firmware/esp32-csi-node:/project" -w /project \
+#     espressif/idf:v5.4 bash -c \
+#     "rm -rf build sdkconfig && \
+#      idf.py -DSDKCONFIG_DEFAULTS='sdkconfig.defaults;sdkconfig.defaults.uno_r4_wifi' set-target esp32s3 && \
+#      idf.py -DSDKCONFIG_DEFAULTS='sdkconfig.defaults;sdkconfig.defaults.uno_r4_wifi' build"
+#
+# Build (native ESP-IDF v5.4):
+#   idf.py -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.uno_r4_wifi" set-target esp32s3
+#   idf.py -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.uno_r4_wifi" build
+
+# Target SoC
+CONFIG_IDF_TARGET="esp32s3"
+
+# Flash: 8 MB Quad SPI with custom 8MB OTA partition layout (partitions_display.csv)
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="8MB"
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_display.csv"
+
+# Console: Route standard I/O to native USB Serial/JTAG peripheral for USB-C connectivity
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+# CONFIG_ESP_CONSOLE_UART_DEFAULT is not set
+
+# Disable AMOLED display (ADR-045)
+# Critical for UNO R4 WiFi: floating QSPI pins false-positive the SH8601 runtime
+# probe, causing main.c to skip the RuView#893 promiscuous DATA upgrade and
+# collapsing CSI yield to 0 pps. Compiling out display support forces has_display=false.
+# CONFIG_DISPLAY_ENABLE is not set
+
+# Disable WASM Tier 3 runtime (ADR-040)
+# ESP32-S3-MINI-1-N8 has no external PSRAM; WASM module arenas require 640 KB PSRAM.
+# Disabling WASM saves ~120 KB flash and ~20 KB internal SRAM.
+# CONFIG_WASM_ENABLE is not set
+# CONFIG_SPIRAM is not set
+
+# Disable onboard WS2812 gamma visualization (ADR-183)
+# The UNO R4 WiFi does not wire an RGB LED to ESP32-S3 GPIO 48 (the 12x8 LED matrix
+# is controlled by the Renesas RA4M1 MCU). Disabling saves RMT peripheral and CPU cycles.
+# CONFIG_LED_GAMMA_VIZ is not set
+
+# Radio & Transport baseline (matches sdkconfig.defaults)
+CONFIG_ESP_WIFI_CSI_ENABLED=y
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+CONFIG_BOOTLOADER_LOG_LEVEL_WARN=y
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+
+# LWIP buffer sizing for continuous 50 Hz CSI + UDP streaming
+CONFIG_LWIP_SO_RCVBUF=y
+CONFIG_LWIP_UDP_RECVMBOX_SIZE=32
+CONFIG_LWIP_TCPIP_RECVMBOX_SIZE=64
+CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM=64
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH=8192
+CONFIG_ESP_WIFI_EXTRA_IRAM_OPT=y

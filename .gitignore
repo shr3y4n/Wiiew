@@ -1,0 +1,37 @@
+# ==============================================================================
+# Wiiew Project — Git Ignore
+# ==============================================================================
+
+# Massive third-party toolchains and repositories
+esp-idf/
+.espressif/
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Wiiew runtime state and keys
+wiiew/data/
+*.pem
+*.key
+
+# Binary firmware and flash backups
+*.bin
+*.elf
+*.map
+build/
+firmware/**/build/
+
+# Logs & scratch
+*.log
+scratch/
+.system_generated/
+
+# OS and IDE files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
