@@ -40,6 +40,17 @@ jobs:
           cp wiiew/frontend/icons/badge-72.png _site/icons/badge-72.png
           touch _site/.nojekyll
 
+      - name: Verify assembled assets
+        run: |
+          test -s _site/index.html
+          test -s _site/style.css
+          test -s _site/app.js
+          test -s _site/manifest.json
+          test -s _site/sw.js
+          grep -q './style.css' _site/index.html
+          grep -q './app.js' _site/index.html
+          echo 'Wiiew Pages assets verified.'
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:
