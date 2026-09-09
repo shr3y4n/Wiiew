@@ -59,7 +59,7 @@ python -m wiiew.launcher.build_exe
 
 Or run directly with PyInstaller:
 ```powershell
-pyinstaller --name=WiiewLauncher --onefile --noconsole --clean --icon="RuView/v2/crates/wifi-densepose-desktop/icons/icon.ico" wiiew/launcher/__main__.py
+pyinstaller --name=WiiewLauncher --onefile --noconsole --clean --paths="." --paths="wiiew/launcher" --hidden-import=wiiew --hidden-import=wiiew.launcher --hidden-import=wiiew.launcher.core --hidden-import=wiiew.launcher.gui --collect-submodules=wiiew.launcher --icon="RuView/v2/crates/wifi-densepose-desktop/icons/icon.ico" wiiew/launcher/__main__.py
 ```
 
 ### 3. Binary Location

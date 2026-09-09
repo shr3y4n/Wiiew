@@ -13,7 +13,10 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 from typing import Optional
 
-from .core import PUBLIC_FRONTEND_URL, ServiceStatus, WiiewServiceManager
+try:
+    from .core import PUBLIC_FRONTEND_URL, ServiceStatus, WiiewServiceManager
+except (ImportError, ValueError):
+    from core import PUBLIC_FRONTEND_URL, ServiceStatus, WiiewServiceManager
 
 # Visual Theme Palette (Matches Wiiew Dark Aesthetic)
 COLOR_BG = "#0b0e14"
