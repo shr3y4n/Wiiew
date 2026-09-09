@@ -18,10 +18,12 @@ wiiew/data/
 *.pem
 *.key
 
-# Binary firmware and flash backups
+# Binary firmware, executables, and flash backups
 *.bin
 *.elf
 *.map
+*.exe
+cloudflared*
 build/
 firmware/**/build/
 
