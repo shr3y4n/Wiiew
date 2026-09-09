@@ -39,18 +39,65 @@ function render(s){lastState=s;const r=s.room||{},p=s.phone||{},sen=s.sensor||{}
  $('#phone').textContent=p.phone_state==='PHONE_PRESENT'?'Home':p.phone_state==='PHONE_MAYBE_AWAY'?'Sleeping':p.phone_state==='PHONE_AWAY'?'Away':(!p.configured?'Not set':p.is_home?'Home':'Away');
  $('#phone-dot').className=`dot ${p.is_home?'online':''}`;
  $('#arm').querySelector('span:nth-child(2)').textContent=sys.armed?'ARMED':'DISARMED';$('#arm').style.background=sys.armed?'linear-gradient(135deg,rgba(105,230,179,.14),rgba(105,230,179,.05))':'rgba(255,255,255,.035)';
- const mState=r.movement_state||(r.motion_level==='active'?'MOVEMENT_DETECTED':r.raw_presence?'STATIONARY':'NONE');
- const person=$('#person');
- if(person){
-   person.classList.toggle('moving',mState==='MOVEMENT_DETECTED');
-   person.classList.toggle('stationary',mState==='STATIONARY');
- }
- $('#last').textContent=`Last activity ${fmtAgo(r.last_activity_seconds_ago)}`;
- $('#motion').textContent=mState==='MOVEMENT_DETECTED'?'Movement detected':mState==='STATIONARY'?'Stationary':'Quiet';
- $('#motion').style.color=mState==='MOVEMENT_DETECTED'?'var(--red)':mState==='STATIONARY'?'var(--cyan)':'var(--text)';
- if($('#direction'))$('#direction').textContent='Dir: Unknown (single node)';
- $('#signal-meta').textContent=`${sen.rssi_dbm??'—'} dBm · ${sen.subcarriers?.length||0} tones`;
- const bars=$('#bars'),amps=sen.subcarriers||[];if(bars.children.length!==amps.slice(0,52).length){bars.innerHTML='';amps.slice(0,52).forEach(()=>{const i=document.createElement('i');bars.appendChild(i)})}const max=Math.max(1,...amps.slice(0,52));[...bars.children].forEach((b,i)=>b.style.height=`${Math.max(8,amps[i]/max*68)}px`)
+  const mState=r.movement_state||(r.motion_level==='active'?'MOVEMENT_DETECTED':r.raw_presence?'STATIONARY':'NONE');
+  const person=$('#person');
+  if(person){
+    person.classList.toggle('moving',mState==='MOVEMENT_DETECTED');
+    person.classList.toggle('stationary',mState==='STATIONARY');
+  }
+
+  // Phase 3: Multi-node localization rendering
+  const loc=s.localization||{};
+  const chip=$('#loc-chip');
+  if(chip){
+    if(loc.state==='VALID_ESTIMATE'&&loc.valid&&loc.x!=null&&loc.y!=null){
+      chip.textContent=`Pos: (${loc.x}m, ${loc.y}m) ±${Math.round((1-loc.confidence)*100)}cm`;
+      chip.style.borderColor='rgba(105,230,179,.4)';
+      chip.style.color='var(--green)';
+    }else if(loc.state==='SINGLE_NODE'){
+      chip.textContent='Single node · Coarse presence';
+      chip.style.borderColor='var(--line)';
+      chip.style.color='var(--muted)';
+    }else if(loc.state==='LOW_CONFIDENCE'){
+      chip.textContent='2 nodes · Insufficient for 2D position';
+      chip.style.borderColor='rgba(243,197,107,.4)';
+      chip.style.color='var(--amber)';
+    }else{
+      chip.textContent='No active nodes';
+      chip.style.borderColor='var(--line)';
+      chip.style.color='var(--dim)';
+    }
+  }
+
+  // Render node beacons around perimeter
+  const nMarkers=$('#node-markers');
+  if(nMarkers&&loc.nodes?.length){
+    const w=loc.room_width_m||4, d=loc.room_depth_m||5;
+    nMarkers.innerHTML=loc.nodes.map(n=>{
+      const left=Math.max(6, Math.min(94, (n.x/w)*100));
+      const top=Math.max(6, Math.min(94, (n.y/d)*100));
+      return `<div class="node-beacon ${n.active?'active':''}" style="left:${left}%;top:${top}%;" title="${n.name||n.node_id}"><small>${n.name?.split(' ')[0]||n.node_id}</small></div>`;
+    }).join('');
+  }
+
+  // Zero Fabrication Policy: Position person ONLY if loc.valid is true
+  if(person){
+    if(loc.valid&&loc.x!=null&&loc.y!=null){
+      const w=loc.room_width_m||4, d=loc.room_depth_m||5;
+      person.style.left=`${Math.max(12, Math.min(88, (loc.x/w)*100))}%`;
+      person.style.top=`${Math.max(12, Math.min(88, (loc.y/d)*100))}%`;
+    }else{
+      person.style.left='50%';
+      person.style.top='49%';
+    }
+  }
+
+  $('#last').textContent=`Last activity ${fmtAgo(r.last_activity_seconds_ago)}`;
+  $('#motion').textContent=mState==='MOVEMENT_DETECTED'?'Movement detected':mState==='STATIONARY'?'Stationary':'Quiet';
+  $('#motion').style.color=mState==='MOVEMENT_DETECTED'?'var(--red)':mState==='STATIONARY'?'var(--cyan)':'var(--text)';
+  if($('#direction'))$('#direction').textContent='Dir: Unknown (single node)';
+  $('#signal-meta').textContent=`${sen.rssi_dbm??'—'} dBm · ${sen.subcarriers?.length||0} tones`;
+  const bars=$('#bars'),amps=sen.subcarriers||[];if(bars.children.length!==amps.slice(0,52).length){bars.innerHTML='';amps.slice(0,52).forEach(()=>{const i=document.createElement('i');bars.appendChild(i)})}const max=Math.max(1,...amps.slice(0,52));[...bars.children].forEach((b,i)=>b.style.height=`${Math.max(8,amps[i]/max*68)}px`)
 }
 async function status(){try{const r=await fetch(apiPath('/api/status'));if(!r.ok)throw 0;render(await r.json());setConn(true)}catch{setConn(false)}}
 function connect(){const url=wsPath();if(!url){setConn(false);return}try{ws?.close()}catch{}ws=new WebSocket(url);ws.onopen=()=>setConn(true);ws.onmessage=e=>{try{render(JSON.parse(e.data))}catch{}};ws.onclose=()=>{setConn(false);setTimeout(connect,2500)};ws.onerror=()=>ws.close()}

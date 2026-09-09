@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
@@ -33,6 +33,19 @@ class WiiewSettings(BaseModel):
 
     # Audio / UI
     sound_enabled: bool = Field(default=True, description="Play in-browser alert sound")
+
+    # Room & Multi-node Localization (Phase 3)
+    room_width_m: float = Field(default=4.0, description="Room width in meters")
+    room_depth_m: float = Field(default=5.0, description="Room depth in meters")
+    nodes: List[Dict[str, Any]] = Field(
+        default_factory=lambda: [
+            {"node_id": "node_1", "name": "ESP32 Sensor 1 (Primary)", "ip": "192.168.1.102", "x": 0.2, "y": 0.2, "enabled": True},
+            {"node_id": "node_2", "name": "ESP32 Sensor 2 (Corner)", "ip": "", "x": 3.8, "y": 0.2, "enabled": False},
+            {"node_id": "node_3", "name": "ESP32 Sensor 3 (Window)", "ip": "", "x": 3.8, "y": 4.8, "enabled": False},
+            {"node_id": "node_4", "name": "ESP32 Sensor 4 (Door)", "ip": "", "x": 0.2, "y": 4.8, "enabled": False},
+        ],
+        description="Configured CSI sensor nodes",
+    )
 
     # RuView endpoints
     ruview_ws_url: str = Field(default="ws://localhost:8765/ws/sensing", description="RuView WebSocket sensing stream")

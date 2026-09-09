@@ -259,6 +259,57 @@ body {
   box-shadow: 0 0 10px var(--accent-green);
 }
 
+/* Multi-node Layer & Loc Chip (Phase 3) */
+.multi-node-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.node-dot {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: #4b5563;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  transition: var(--transition);
+}
+
+.node-dot.active {
+  background: var(--accent-green);
+  border-color: rgba(16, 185, 129, 0.6);
+  box-shadow: 0 0 10px var(--accent-green);
+}
+
+.node-dot small {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.stage-loc-chip {
+  position: absolute;
+  bottom: 10px;
+  right: 12px;
+  z-index: 15;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-dim);
+  letter-spacing: 0.03em;
+}
+
 .beacon-pulse {
   position: absolute;
   width: 18px;

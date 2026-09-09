@@ -21,6 +21,7 @@ import websockets
 
 from .config import WiiewSettings, load_settings, save_settings
 from .decision_engine import DecisionEngine
+from .localization_engine import LocalizationEngine
 from .push_service import WebPushService
 from .trusted_device import TrustedDeviceDetector
 
@@ -36,6 +37,7 @@ FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 settings: WiiewSettings = load_settings()
 push_service: WebPushService = WebPushService()
 phone_detector: TrustedDeviceDetector = TrustedDeviceDetector(settings)
+localization_engine: LocalizationEngine = LocalizationEngine(settings)
 
 
 def handle_intrusion_alert(event: Dict) -> None:
@@ -90,10 +92,31 @@ async def ruview_stream_consumer():
                             rssi = -80.0
                             amp = 0.0
                             if nodes:
+                                for idx, n in enumerate(nodes):
+                                    nid = str(n.get("node_id", f"node_{idx + 1}"))
+                                    n_rssi = float(n.get("rssi_dbm", -80.0))
+                                    n_amp = float(n.get("mean_amplitude", 0.0))
+                                    localization_engine.update_node_sample(
+                                        node_id=nid,
+                                        presence=presence,
+                                        rssi=n_rssi,
+                                        amplitude=n_amp,
+                                        variance=var,
+                                        motion_band_power=mbp,
+                                    )
                                 n0 = nodes[0]
                                 rssi = float(n0.get("rssi_dbm", -80.0))
                                 amp = float(n0.get("mean_amplitude", 0.0))
                                 last_subcarriers = n0.get("amplitude", [])
+                            else:
+                                localization_engine.update_node_sample(
+                                    node_id="node_1",
+                                    presence=presence,
+                                    rssi=-80.0,
+                                    amplitude=0.0,
+                                    variance=var,
+                                    motion_band_power=mbp,
+                                )
 
                             decision_engine.update_csi_sample(
                                 presence=presence,
@@ -203,6 +226,7 @@ def get_full_state() -> Dict:
             "armed": settings.is_armed,
             "sound_enabled": settings.sound_enabled,
         },
+        "localization": localization_engine.compute_localization().model_dump(),
     }
 
 
@@ -214,6 +238,19 @@ def get_full_state() -> Dict:
 async def api_status():
     """Current system status."""
     return get_full_state()
+
+
+@app.get("/api/localization")
+async def api_localization():
+    """Current room localization status and node geometric coordinates."""
+    return localization_engine.compute_localization().model_dump()
+
+
+@app.get("/api/nodes")
+async def api_nodes():
+    """Current status of all configured CSI nodes."""
+    loc = localization_engine.compute_localization()
+    return {"nodes": loc.nodes, "active_count": loc.active_nodes}
 
 
 @app.post("/api/arm")
@@ -255,6 +292,8 @@ async def api_save_settings(new_settings: WiiewSettings):
     settings = new_settings
     phone_detector.settings = settings
     decision_engine.settings = settings
+    localization_engine.settings = settings
+    localization_engine._init_nodes()
     save_settings(settings)
     return {"status": "ok", "settings": settings.model_dump()}
 

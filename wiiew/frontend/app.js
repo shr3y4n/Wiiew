@@ -336,6 +336,49 @@ function updateDashboard(state) {
     motionSubtext.textContent = 'Direction: Unknown (single node)';
   }
 
+  // Multi-Node CSI Localization Rendering (Phase 3)
+  const loc = state.localization || {};
+  const stageLocChip = document.getElementById('stage-loc-chip');
+  if (stageLocChip) {
+    if (loc.state === 'VALID_ESTIMATE' && loc.valid && loc.x != null && loc.y != null) {
+      stageLocChip.textContent = `Pos: (${loc.x}m, ${loc.y}m) ±${Math.round((1 - loc.confidence) * 100)}cm`;
+      stageLocChip.style.color = '#34d399';
+    } else if (loc.state === 'SINGLE_NODE') {
+      stageLocChip.textContent = 'Single node · Coarse presence';
+      stageLocChip.style.color = 'var(--text-dim)';
+    } else if (loc.state === 'LOW_CONFIDENCE') {
+      stageLocChip.textContent = '2 nodes · Insufficient for 2D position';
+      stageLocChip.style.color = '#fbbf24';
+    } else {
+      stageLocChip.textContent = 'No active nodes';
+      stageLocChip.style.color = 'var(--text-dim)';
+    }
+  }
+
+  const multiNodeLayer = document.getElementById('multi-node-layer');
+  if (multiNodeLayer && loc.nodes && loc.nodes.length > 0) {
+    const w = loc.room_width_m || 4, d = loc.room_depth_m || 5;
+    multiNodeLayer.innerHTML = loc.nodes.map(n => {
+      const left = Math.max(6, Math.min(94, (n.x / w) * 100));
+      const top = Math.max(6, Math.min(94, (n.y / d) * 100));
+      return `<div class="node-dot ${n.active ? 'active' : ''}" style="left:${left}%;top:${top}%;" title="${n.name || n.node_id}"><small>${n.name ? n.name.split(' ')[0] : n.node_id}</small></div>`;
+    }).join('');
+  }
+
+  // Zero Fabrication Policy: Position human silhouette ONLY if loc.valid is true
+  if (loc.valid && loc.x != null && loc.y != null) {
+    sil.style.position = 'absolute';
+    const w = loc.room_width_m || 4, d = loc.room_depth_m || 5;
+    sil.style.left = `${Math.max(12, Math.min(88, (loc.x / w) * 100))}%`;
+    sil.style.top = `${Math.max(12, Math.min(88, (loc.y / d) * 100))}%`;
+    sil.style.transform = 'translate(-50%, -50%)';
+  } else {
+    sil.style.position = 'relative';
+    sil.style.left = '';
+    sil.style.top = '';
+    sil.style.transform = '';
+  }
+
   // Arm / Disarm Button
   const btnArm = document.getElementById('btn-arm-toggle');
   const btnArmText = document.getElementById('btn-arm-text');
