@@ -87,13 +87,15 @@ class TrustedDeviceDetector:
         self.last_seen_timestamp: Optional[float] = None
         self.last_seen_method: Optional[str] = None
         self.is_home: bool = False
+        self.phone_state: str = "UNKNOWN"
         self.status_label: str = "NOT CONFIGURED"
         self._lock = asyncio.Lock()
 
     def heartbeat(self, source: str = "pwa") -> None:
-        """Called when PWA on phone sends a live heartbeat."""
+        """Called when PWA on phone sends a live heartbeat or user taps I'm Home."""
         self.last_seen_timestamp = time.time()
         self.last_seen_method = f"heartbeat ({source})"
+        self.phone_state = "PHONE_PRESENT"
         self.is_home = True
         self.status_label = "HOME (ACTIVE)"
 
@@ -106,6 +108,7 @@ class TrustedDeviceDetector:
         target_mac = self.settings.trusted_phone_mac.strip().lower().replace("-", ":")
 
         if not target_ip and not target_mac:
+            self.phone_state = "UNKNOWN"
             self.status_label = "NOT CONFIGURED"
             self.is_home = False
             return False
@@ -138,6 +141,7 @@ class TrustedDeviceDetector:
         if detected_now:
             self.last_seen_timestamp = now
             self.last_seen_method = method_now
+            self.phone_state = "PHONE_PRESENT"
             self.is_home = True
             self.status_label = "HOME (ACTIVE)"
             return True
@@ -147,15 +151,19 @@ class TrustedDeviceDetector:
             elapsed = now - self.last_seen_timestamp
             grace = float(self.settings.phone_grace_period_seconds)
             if elapsed <= 15:
+                self.phone_state = "PHONE_PRESENT"
                 self.is_home = True
                 self.status_label = "HOME (ACTIVE)"
             elif elapsed <= grace:
+                self.phone_state = "PHONE_MAYBE_AWAY"
                 self.is_home = True
                 self.status_label = "HOME (SLEEPING)"
             else:
+                self.phone_state = "PHONE_AWAY"
                 self.is_home = False
                 self.status_label = "AWAY"
         else:
+            self.phone_state = "PHONE_AWAY"
             self.is_home = False
             self.status_label = "AWAY"
 
@@ -173,6 +181,8 @@ class TrustedDeviceDetector:
             "device_name": self.settings.trusted_phone_name,
             "ip": self.settings.trusted_phone_ip,
             "mac": self.settings.trusted_phone_mac,
+            "phone_state": self.phone_state,
+            "online": (self.phone_state == "PHONE_PRESENT"),
             "is_home": self.is_home,
             "status_label": self.status_label,
             "last_seen_seconds_ago": last_seen_ago,

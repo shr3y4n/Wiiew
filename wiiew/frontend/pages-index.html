@@ -75,6 +75,10 @@
       <label>Wiiew backend URL <span>Required for the GitHub Pages version</span><input id="api" placeholder="https://your-secure-tunnel.example.com"></label>
       <p class="hint">GitHub Pages hosts the interface. Your CSI/RuView backend stays on the laptop. Use a secure HTTPS endpoint to connect them.</p>
       <label>Trusted phone name <input id="phone-name" placeholder="My Phone"></label>
+      <label>Trusted phone IP address <input id="phone-ip" placeholder="e.g. 192.168.1.105"></label>
+      <label>Trusted phone MAC (optional stable ID) <input id="phone-mac" placeholder="e.g. de:f3:d1:75:ab:bf"></label>
+      <button id="btn-discover-devices" type="button" class="secondary-btn" style="width:100%;margin-top:6px;min-height:38px;font-size:12px;border-radius:10px;">Scan Home Network for My Phone</button>
+      <div id="discovered-list" style="margin-top:8px;max-height:140px;overflow-y:auto;display:none;"></div>
       <label>Presence confirmation <output><b id="debounce-out">15</b> sec</output><input id="debounce" type="range" min="5" max="45" step="5" value="15"></label>
       <label>Phone-away grace <output><b id="grace-out">3</b> min</output><input id="grace" type="range" min="1" max="10" value="3"></label>
       <div class="modal-actions"><button id="save" class="save-btn">Save</button><button id="push" class="secondary-btn">Enable notifications</button></div>

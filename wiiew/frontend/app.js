@@ -293,21 +293,21 @@ function updateDashboard(state) {
 
   labelPhoneName.textContent = phone.device_name || 'My Phone';
 
-  if (!phone.configured) {
+  if (!phone.configured || phone.phone_state === 'UNKNOWN') {
     badgePhone.className = 'status-pill pill-gray';
     badgePhone.textContent = 'UNSET';
     phoneSubtext.textContent = 'Configure in settings';
-  } else if (phone.is_home) {
+  } else if (phone.phone_state === 'PHONE_PRESENT' || (phone.is_home && (!phone.status_label || !phone.status_label.includes('SLEEPING')))) {
     badgePhone.className = 'status-pill pill-green';
     badgePhone.textContent = 'HOME';
-    if (phone.status_label && phone.status_label.includes('SLEEPING')) {
-      const minLeft = Math.ceil((phone.remaining_grace_seconds || 0) / 60);
-      phoneSubtext.textContent = `Sleep grace (${minLeft}m left)`;
-    } else {
-      phoneSubtext.textContent = 'Active on Wi-Fi';
-    }
-  } else {
+    phoneSubtext.textContent = 'Active on Wi-Fi';
+  } else if (phone.phone_state === 'PHONE_MAYBE_AWAY' || (phone.is_home && phone.status_label && phone.status_label.includes('SLEEPING'))) {
     badgePhone.className = 'status-pill pill-amber';
+    badgePhone.textContent = 'SLEEPING';
+    const minLeft = Math.ceil((phone.remaining_grace_seconds || 0) / 60);
+    phoneSubtext.textContent = `Sleep grace (${minLeft}m left)`;
+  } else {
+    badgePhone.className = 'status-pill pill-gray';
     badgePhone.textContent = 'AWAY';
     const ago = phone.last_seen_seconds_ago;
     phoneSubtext.textContent = ago ? `Last seen ${Math.floor(ago / 60)}m ago` : 'Not seen';
