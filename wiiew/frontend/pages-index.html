@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#080b12">
+  <meta name="description" content="Wiiew — calm room presence monitor">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Wiiew</title>
+  <link rel="manifest" href="./manifest.json">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <link rel="stylesheet" href="./pages-style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="./">
+        <span class="brand-mark">⌁</span>
+        <span><b>Wiiew</b><small>ROOM MONITOR</small></span>
+      </a>
+      <div class="top-actions">
+        <span id="connection" class="connection"><i></i> Connecting</span>
+        <button id="install" class="icon-btn" hidden aria-label="Install Wiiew">⇩</button>
+        <button id="settings" class="icon-btn" aria-label="Settings">⚙</button>
+      </div>
+    </header>
+
+    <main>
+      <section id="hero" class="hero empty">
+        <div class="hero-copy">
+          <span id="state-kicker" class="eyebrow">ROOM STATUS</span>
+          <h1 id="state-title">Room empty</h1>
+          <p id="state-text">Nothing detected right now.</p>
+          <div id="confirm" class="confirm" hidden><span id="confirm-fill"></span><label>Confirming presence <b id="confirm-time">0s</b></label></div>
+        </div>
+        <div class="room-visual" aria-label="Room presence visualization">
+          <div class="room-grid"></div>
+          <div id="person" class="person" aria-hidden="true">
+            <div class="head"></div><div class="body"></div><div class="arm left"></div><div class="arm right"></div><div class="leg left"></div><div class="leg right"></div>
+          </div>
+          <span id="visual-label" class="visual-label">CLEAR</span>
+        </div>
+      </section>
+
+      <section class="status-grid">
+        <article class="stat-card"><span class="stat-icon">◉</span><div><small>CSI SENSOR</small><strong id="sensor">Offline</strong></div><em id="sensor-dot" class="dot"></em></article>
+        <article class="stat-card"><span class="stat-icon">◌</span><div><small>RUVIEW</small><strong id="server">Offline</strong></div><em id="server-dot" class="dot"></em></article>
+        <article class="stat-card"><span class="stat-icon">⌁</span><div><small>TRUSTED PHONE</small><strong id="phone">Not set</strong></div><em id="phone-dot" class="dot"></em></article>
+      </section>
+
+      <section class="control-row">
+        <button id="arm" class="arm-btn"><span class="arm-led"></span><span>ARMED</span><small>Alert when presence is detected while you're away</small></button>
+        <button id="home" class="home-btn">✓ I'm Home</button>
+      </section>
+
+      <section class="signal-card">
+        <div class="section-head"><div><small>LIVE SIGNAL</small><h2>Wi-Fi sensing field</h2></div><span id="signal-meta">—</span></div>
+        <div id="bars" class="signal-bars"></div>
+        <div class="signal-foot"><span id="last">Last activity —</span><span id="motion">Motion —</span></div>
+      </section>
+
+      <section class="activity-card">
+        <div class="section-head"><div><small>RECENT</small><h2>Activity</h2></div><button id="refresh" class="text-btn">Refresh</button></div>
+        <div id="events" class="events"><div class="muted">No events yet.</div></div>
+      </section>
+    </main>
+
+    <footer>Wiiew • local-first room monitoring</footer>
+  </div>
+
+  <div id="modal" class="modal" hidden>
+    <div class="modal-card">
+      <div class="modal-head"><div><small>SETUP</small><h2>Wiiew settings</h2></div><button id="close" class="icon-btn">×</button></div>
+      <label>Wiiew backend URL <span>Required for the GitHub Pages version</span><input id="api" placeholder="https://your-secure-tunnel.example.com"></label>
+      <p class="hint">GitHub Pages hosts the interface. Your CSI/RuView backend stays on the laptop. Use a secure HTTPS endpoint to connect them.</p>
+      <label>Trusted phone name <input id="phone-name" placeholder="My Phone"></label>
+      <label>Presence confirmation <output><b id="debounce-out">15</b> sec</output><input id="debounce" type="range" min="5" max="45" step="5" value="15"></label>
+      <label>Phone-away grace <output><b id="grace-out">3</b> min</output><input id="grace" type="range" min="1" max="10" value="3"></label>
+      <div class="modal-actions"><button id="save" class="save-btn">Save</button><button id="push" class="secondary-btn">Enable notifications</button></div>
+      <p id="settings-msg" class="hint"></p>
+    </div>
+  </div>
+
+  <script src="./pages-app.js"></script>
+</body>
+</html>
