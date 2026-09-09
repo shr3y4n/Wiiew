@@ -374,6 +374,31 @@ body {
   50% { transform: translateY(-4px); }
 }
 
+/* Phase 2: CSI Movement & Direction Visualizer */
+.human-silhouette.movement-active {
+  animation: movement-shimmer 1.4s ease-in-out infinite alternate !important;
+}
+.human-silhouette.movement-stationary {
+  animation: movement-breathe 3.5s ease-in-out infinite alternate !important;
+}
+
+@keyframes movement-shimmer {
+  0% { transform: translateY(0) scale(0.98); filter: drop-shadow(0 0 12px rgba(239, 68, 68, 0.45)); }
+  100% { transform: translateY(-5px) scale(1.02); filter: drop-shadow(0 0 26px rgba(239, 68, 68, 0.8)); }
+}
+
+@keyframes movement-breathe {
+  0% { transform: translateY(0) scale(0.99); opacity: 0.88; }
+  100% { transform: translateY(-2px) scale(1.01); opacity: 1.0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .human-silhouette.movement-active,
+  .human-silhouette.movement-stationary {
+    animation: none !important;
+  }
+}
+
 /* Trusted Home Shield Graphic */
 .trusted-home-visual {
   position: relative;

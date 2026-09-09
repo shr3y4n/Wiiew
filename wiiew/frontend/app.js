@@ -313,6 +313,29 @@ function updateDashboard(state) {
     phoneSubtext.textContent = ago ? `Last seen ${Math.floor(ago / 60)}m ago` : 'Not seen';
   }
 
+  // CSI Movement Telemetry & Direction
+  const mState = room.movement_state || (room.motion_level === 'active' ? 'MOVEMENT_DETECTED' : room.raw_presence ? 'STATIONARY' : 'NONE');
+  sil.classList.toggle('movement-active', mState === 'MOVEMENT_DETECTED');
+  sil.classList.toggle('movement-stationary', mState === 'STATIONARY');
+
+  const badgeMotion = document.getElementById('badge-motion');
+  const motionSubtext = document.getElementById('motion-subtext');
+  if (badgeMotion) {
+    if (mState === 'MOVEMENT_DETECTED') {
+      badgeMotion.className = 'status-pill pill-red';
+      badgeMotion.textContent = 'MOVEMENT';
+    } else if (mState === 'STATIONARY') {
+      badgeMotion.className = 'status-pill pill-green';
+      badgeMotion.textContent = 'STATIONARY';
+    } else {
+      badgeMotion.className = 'status-pill pill-gray';
+      badgeMotion.textContent = 'QUIET';
+    }
+  }
+  if (motionSubtext) {
+    motionSubtext.textContent = 'Direction: Unknown (single node)';
+  }
+
   // Arm / Disarm Button
   const btnArm = document.getElementById('btn-arm-toggle');
   const btnArmText = document.getElementById('btn-arm-text');

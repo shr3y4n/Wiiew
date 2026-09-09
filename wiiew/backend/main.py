@@ -82,6 +82,10 @@ async def ruview_stream_consumer():
                             presence = bool(clf.get("presence", False))
                             motion = str(clf.get("motion_level", "empty"))
 
+                            features = data.get("features", {})
+                            var = float(features.get("variance", 0.0))
+                            mbp = float(features.get("motion_band_power", 0.0))
+
                             nodes = data.get("nodes", [])
                             rssi = -80.0
                             amp = 0.0
@@ -96,6 +100,8 @@ async def ruview_stream_consumer():
                                 motion_level=motion,
                                 rssi=rssi,
                                 amplitude=amp,
+                                variance=var,
+                                motion_band_power=mbp,
                             )
                     except Exception as ex:
                         logger.debug("Frame decode error: %s", ex)
@@ -180,11 +186,16 @@ def get_full_state() -> Dict:
             "presence_threshold_seconds": decision_status["presence_threshold_seconds"],
             "last_activity_seconds_ago": decision_status["last_activity_seconds_ago"],
             "motion_level": decision_status["motion_level"],
+            "movement_state": decision_status.get("movement_state", "NONE"),
+            "movement_direction": decision_status.get("movement_direction", "UNKNOWN"),
+            "movement_intensity": decision_status.get("movement_intensity", 0.0),
         },
         "sensor": {
             "online": decision_status["sensor_online"],
             "rssi_dbm": decision_status["rssi_dbm"],
             "mean_amplitude": decision_status["mean_amplitude"],
+            "variance": decision_status.get("variance", 0.0),
+            "motion_band_power": decision_status.get("motion_band_power", 0.0),
             "subcarriers": last_subcarriers[:64],
         },
         "phone": phone_status,

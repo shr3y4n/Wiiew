@@ -45,8 +45,15 @@ class DecisionEngine:
         self.motion_level: str = "empty"
         self.rssi_dbm: float = -80.0
         self.mean_amplitude: float = 0.0
+        self.variance: float = 0.0
+        self.motion_band_power: float = 0.0
         self.csi_last_seen: float = 0.0
         self.sensor_online: bool = False
+
+        # Movement & Direction tracking (Phase 2)
+        self.movement_state: str = "NONE"  # NONE, STATIONARY, MOVEMENT_DETECTED
+        self.movement_direction: str = "UNKNOWN"  # Strictly unresolvable from single node
+        self.movement_intensity: float = 0.0  # 0.0 - 1.0
 
         # Debounce / Hysteresis timers
         self.presence_start_time: Optional[float] = None
@@ -72,6 +79,8 @@ class DecisionEngine:
         motion_level: str,
         rssi: float,
         amplitude: float,
+        variance: float = 0.0,
+        motion_band_power: float = 0.0,
     ) -> None:
         """Feed a new sensing frame from RuView."""
         now = time.time()
@@ -79,6 +88,8 @@ class DecisionEngine:
         self.motion_level = motion_level
         self.rssi_dbm = rssi
         self.mean_amplitude = amplitude
+        self.variance = variance
+        self.motion_band_power = motion_band_power
         self.csi_last_seen = now
         self.sensor_online = True
 
@@ -148,7 +159,22 @@ class DecisionEngine:
             self.current_state = "PRESENCE_UNTRUSTED"
             self.state_message = "Someone has entered your room."
 
-        # 4. Single-Entry Event Alert Dispatch & Logging
+        # 4. Movement & Direction Evaluation (Phase 2)
+        if not self.sensor_online or not self.raw_presence:
+            self.movement_state = "NONE"
+            self.movement_intensity = 0.0
+        elif self.motion_level == "active" or self.motion_band_power > 0.35 or self.variance > 4.0:
+            self.movement_state = "MOVEMENT_DETECTED"
+            norm_var = min(1.0, max(0.0, self.variance / 50.0))
+            norm_pwr = min(1.0, max(0.0, self.motion_band_power / 2.0))
+            self.movement_intensity = round(min(1.0, 0.4 + 0.6 * max(norm_var, norm_pwr)), 2)
+        else:
+            self.movement_state = "STATIONARY"
+            self.movement_intensity = round(min(0.35, max(0.05, self.variance / 20.0)), 2)
+
+        self.movement_direction = "UNKNOWN"
+
+        # 5. Single-Entry Event Alert Dispatch & Logging
         if self.current_state == "PRESENCE_UNTRUSTED":
             if not self.is_in_untrusted_event:
                 self.is_in_untrusted_event = True
@@ -228,6 +254,11 @@ class DecisionEngine:
             "sensor_online": self.sensor_online,
             "last_activity_seconds_ago": last_activity_ago,
             "motion_level": self.motion_level,
+            "movement_state": self.movement_state,
+            "movement_direction": self.movement_direction,
+            "movement_intensity": self.movement_intensity,
+            "variance": round(self.variance, 2),
+            "motion_band_power": round(self.motion_band_power, 2),
             "rssi_dbm": self.rssi_dbm,
             "mean_amplitude": self.mean_amplitude,
             "is_in_untrusted_event": self.is_in_untrusted_event,
