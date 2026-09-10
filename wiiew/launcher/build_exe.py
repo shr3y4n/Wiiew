@@ -64,6 +64,39 @@ def build_launcher() -> Path:
     if not target_exe.exists():
         raise FileNotFoundError(f"Expected output binary not found at {target_exe}")
 
+    # Persist repo path to AppData and home
+    try:
+        from wiiew.launcher.core import save_persisted_repo_root
+        save_persisted_repo_root(repo_root)
+    except Exception:
+        pass
+
+    # If desktop copy exists, synchronize it with the fresh build
+    desktop_dir = Path(os.path.expanduser("~/Desktop"))
+    desktop_exe = desktop_dir / "WiiewLauncher.exe"
+    if desktop_exe.exists():
+        try:
+            shutil.copy2(target_exe, desktop_exe)
+            print(f"Updated Desktop Executable: {desktop_exe}")
+        except Exception as ex:
+            print(f"Notice: Could not copy to desktop exe: {ex}")
+
+    # Create/update clean Windows desktop shortcut
+    try:
+        ps_cmd = f"""
+        $WshShell = New-Object -ComObject WScript.Shell
+        $Shortcut = $WshShell.CreateShortcut('{desktop_dir / "Wiiew Launcher.lnk"}')
+        $Shortcut.TargetPath = '{target_exe}'
+        $Shortcut.WorkingDirectory = '{repo_root}'
+        $Shortcut.Description = 'Wiiew Room Intrusion Monitor Launcher'
+        if (Test-Path '{icon_ico}') {{ $Shortcut.IconLocation = '{icon_ico}' }}
+        $Shortcut.Save()
+        """
+        subprocess.run(["powershell", "-NoProfile", "-Command", ps_cmd], check=False)
+        print(f"Created/Updated Desktop Shortcut: {desktop_dir / 'Wiiew Launcher.lnk'}")
+    except Exception as ex:
+        print(f"Notice: Could not create desktop shortcut: {ex}")
+
     size_mb = target_exe.stat().st_size / (1024 * 1024)
     print("==================================================")
     print("BUILD SUCCESSFUL!")

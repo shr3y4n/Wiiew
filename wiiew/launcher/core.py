@@ -64,6 +64,126 @@ def find_python_executable(explicit: Optional[str] = None) -> str:
     return "python"
 
 
+def get_persisted_repo_root() -> Optional[Path]:
+    """Retrieve previously saved repo path from AppData or user profile."""
+    candidates = []
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        candidates.append(Path(appdata) / "Wiiew" / "repo_path.txt")
+    candidates.append(Path.home() / ".wiiew" / "repo_path.txt")
+
+    for path in candidates:
+        try:
+            if path.is_file():
+                txt = path.read_text(encoding="utf-8").strip()
+                p = Path(txt).resolve()
+                if (p / "wiiew").is_dir() and (p / "RuView").is_dir():
+                    return p
+        except Exception:
+            continue
+    return None
+
+
+def save_persisted_repo_root(p: Path) -> None:
+    """Save valid repo path to AppData and home folder for launcher portability."""
+    try:
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            target_dir = Path(appdata) / "Wiiew"
+            target_dir.mkdir(parents=True, exist_ok=True)
+            (target_dir / "repo_path.txt").write_text(str(p.resolve()), encoding="utf-8")
+        target_dir2 = Path.home() / ".wiiew"
+        target_dir2.mkdir(parents=True, exist_ok=True)
+        (target_dir2 / "repo_path.txt").write_text(str(p.resolve()), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def find_repo_root(explicit: Optional[Path] = None) -> Path:
+    """
+    Robustly locate the Wiiew repository root.
+    Supports running from:
+    - python -m wiiew.launcher
+    - dist/WiiewLauncher.exe
+    - Desktop (e.g. C:\\Users\\...\\Desktop\\WiiewLauncher.exe)
+    - Environment variable WIIEW_REPO_ROOT
+    - Persisted AppData config
+    - Known workspace path (D:\\COLLEGE\\GitHub Projects\\Wiiew)
+    """
+    # 1. Explicit argument
+    if explicit is not None:
+        p = Path(explicit).resolve()
+        if (p / "wiiew").is_dir():
+            save_persisted_repo_root(p)
+            return p
+
+    # 2. Environment variable
+    env_root = os.environ.get("WIIEW_REPO_ROOT") or os.environ.get("WIIEW_ROOT")
+    if env_root:
+        p = Path(env_root).resolve()
+        if (p / "wiiew").is_dir():
+            save_persisted_repo_root(p)
+            return p
+
+    # 3. If running as Python script / un-frozen
+    if not getattr(sys, "frozen", False):
+        p = Path(__file__).resolve().parent.parent.parent
+        if (p / "wiiew").is_dir():
+            save_persisted_repo_root(p)
+            return p
+
+    # 4. If frozen, check relative to executable directory
+    exe_path = Path(sys.executable).resolve()
+    exe_dir = exe_path.parent
+    for candidate in [exe_dir, exe_dir.parent, exe_dir.parent.parent]:
+        if (candidate / "wiiew").is_dir() and (candidate / "RuView").is_dir():
+            save_persisted_repo_root(candidate)
+            return candidate
+
+    # 5. Check persisted config from previous runs or setup
+    persisted = get_persisted_repo_root()
+    if persisted is not None:
+        return persisted
+
+    # 6. Check known project workspace path
+    known_path = Path(r"D:\COLLEGE\GitHub Projects\Wiiew").resolve()
+    if (known_path / "wiiew").is_dir():
+        save_persisted_repo_root(known_path)
+        return known_path
+
+    # Fallback to exe_dir
+    return exe_dir
+
+
+def find_cloudflared(repo_root: Path, explicit: Optional[Path] = None) -> Path:
+    """Locate cloudflared.exe with multiple robust fallbacks."""
+    if explicit is not None and Path(explicit).is_file():
+        return Path(explicit).resolve()
+
+    # 1. Look in repo root
+    cand1 = repo_root / "cloudflared.exe"
+    if cand1.is_file():
+        return cand1
+
+    # 2. Look next to running executable
+    if getattr(sys, "frozen", False):
+        cand2 = Path(sys.executable).resolve().parent / "cloudflared.exe"
+        if cand2.is_file():
+            return cand2
+
+    # 3. Look in PATH
+    which_cf = shutil.which("cloudflared")
+    if which_cf:
+        return Path(which_cf).resolve()
+
+    # 4. Known hardcoded path in workspace
+    cand4 = Path(r"D:\COLLEGE\GitHub Projects\Wiiew\cloudflared.exe")
+    if cand4.is_file():
+        return cand4
+
+    return repo_root / "cloudflared.exe"
+
+
 class WiiewServiceManager:
     """
     Manages background services for Wiiew.
@@ -79,26 +199,8 @@ class WiiewServiceManager:
         cloudflared_path: Optional[Path] = None,
         python_executable: Optional[str] = None,
     ) -> None:
-        if repo_root is not None:
-            self.repo_root = Path(repo_root).resolve()
-        else:
-            if getattr(sys, "frozen", False):
-                exe_dir = Path(sys.executable).resolve().parent
-                if (exe_dir / "wiiew").is_dir():
-                    self.repo_root = exe_dir
-                elif (exe_dir.parent / "wiiew").is_dir():
-                    self.repo_root = exe_dir.parent
-                else:
-                    self.repo_root = exe_dir
-            else:
-                # Default to repo root: 3 levels up from this file (wiiew/launcher/core.py -> repo_root)
-                self.repo_root = Path(__file__).resolve().parent.parent.parent
-
-        self.cloudflared_path = (
-            Path(cloudflared_path).resolve()
-            if cloudflared_path is not None
-            else (self.repo_root / "cloudflared.exe")
-        )
+        self.repo_root = find_repo_root(repo_root)
+        self.cloudflared_path = find_cloudflared(self.repo_root, cloudflared_path)
         self.python_executable = find_python_executable(python_executable)
 
         self.status = ServiceStatus()
@@ -229,6 +331,19 @@ class WiiewServiceManager:
         self.status.last_error = ""
 
         try:
+            # 0. Pre-flight repository validation
+            if not self.repo_root.is_dir() or not (self.repo_root / "wiiew").is_dir():
+                resolved = find_repo_root()
+                if resolved.is_dir() and (resolved / "wiiew").is_dir():
+                    self.repo_root = resolved
+                    self.cloudflared_path = find_cloudflared(self.repo_root, self.cloudflared_path)
+                else:
+                    self.status.last_error = f"Wiiew repository folder not found: {self.repo_root}"
+                    self._log(f"ERROR: Wiiew repository not found at '{self.repo_root}'", log_cb)
+                    self._log("Please verify the repository directory exists.", log_cb)
+                    self._notify_status(status_cb)
+                    return False
+
             # 1. ESP32 Check
             self.status.esp32 = "CHECKING"
             self._notify_status(status_cb)
@@ -250,8 +365,15 @@ class WiiewServiceManager:
                 self.pre_existing.add("ruview")
                 self.status.ruview = "RUNNING"
             else:
-                self._log("Starting RuView...", log_cb)
                 ruview_dir = self.repo_root / "RuView"
+                if not ruview_dir.is_dir():
+                    self.status.ruview = "ERROR"
+                    self.status.last_error = f"RuView folder not found at {ruview_dir}"
+                    self._log(f"ERROR: RuView directory does not exist at '{ruview_dir}'", log_cb)
+                    self._notify_status(status_cb)
+                    return False
+
+                self._log("Starting RuView...", log_cb)
                 ruview_archive = ruview_dir / "archive"
                 env = os.environ.copy()
                 env["PYTHONPATH"] = str(ruview_archive)
@@ -299,6 +421,14 @@ class WiiewServiceManager:
                 self._notify_status(status_cb)
                 return False
             else:
+                wiiew_dir = self.repo_root / "wiiew"
+                if not wiiew_dir.is_dir():
+                    self.status.fastapi = "ERROR"
+                    self.status.last_error = f"Wiiew backend folder not found at {wiiew_dir}"
+                    self._log(f"ERROR: Wiiew directory does not exist at '{wiiew_dir}'", log_cb)
+                    self._notify_status(status_cb)
+                    return False
+
                 self._log("Starting FastAPI...", log_cb)
                 proc_fastapi = subprocess.Popen(
                     [
@@ -356,19 +486,14 @@ class WiiewServiceManager:
                 self._log(f"Opened Wiiew in browser: {PUBLIC_FRONTEND_URL}?api={pre_cf_url}", log_cb)
                 return True
 
-            if not self.cloudflared_path.exists():
-                # Check PATH as fallback
-                which_cf = subprocess.run(["where", "cloudflared"], stdout=subprocess.PIPE, text=True)
-                if which_cf.returncode == 0:
-                    cf_bin = which_cf.stdout.strip().splitlines()[0]
-                else:
-                    self.status.cloudflare = "ERROR"
-                    self.status.last_error = f"cloudflared.exe not found at {self.cloudflared_path}"
-                    self._log(f"ERROR: {self.status.last_error}", log_cb)
-                    self._notify_status(status_cb)
-                    return False
-            else:
-                cf_bin = str(self.cloudflared_path)
+            cf_resolved = find_cloudflared(self.repo_root, self.cloudflared_path)
+            if not cf_resolved.is_file():
+                self.status.cloudflare = "ERROR"
+                self.status.last_error = f"cloudflared.exe not found at {cf_resolved}"
+                self._log(f"ERROR: {self.status.last_error}", log_cb)
+                self._notify_status(status_cb)
+                return False
+            cf_bin = str(cf_resolved)
 
             self._log("Starting Cloudflare...", log_cb)
             proc_cf = subprocess.Popen(
