@@ -493,11 +493,30 @@ class WiiewServiceManager:
                 self._log(f"ERROR: {self.status.last_error}", log_cb)
                 self._notify_status(status_cb)
                 return False
-            cf_bin = str(cf_resolved)
+            # Clean up any stale/zombie cloudflared instances that may block ports or pipes
+            try:
+                subprocess.run(
+                    ["powershell", "-NoProfile", "-Command", "Get-Process -Name cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue"],
+                    timeout=3,
+                    check=False,
+                )
+            except Exception:
+                pass
 
-            self._log("Starting Cloudflare...", log_cb)
+            cf_bin = str(cf_resolved)
+            self._log("Starting Cloudflare (IPv4 / HTTP2)...", log_cb)
+            cf_cmd = [
+                cf_bin,
+                "tunnel",
+                "--edge-ip-version",
+                "4",
+                "--protocol",
+                "http2",
+                "--url",
+                "http://127.0.0.1:8000",
+            ]
             proc_cf = subprocess.Popen(
-                [cf_bin, "tunnel", "--url", "http://127.0.0.1:8000"],
+                cf_cmd,
                 cwd=str(self.repo_root),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -507,29 +526,42 @@ class WiiewServiceManager:
             self.launcher_procs["cloudflare"] = proc_cf
             self.launcher_pids["cloudflare"] = proc_cf.pid
 
-            # Parse tunnel URL from output
-            extracted_url: Optional[str] = None
-            start_cf_time = time.time()
+            # Continuous pipe drain thread prevents Windows pipe buffer deadlock
+            extracted_url_holder: List[str] = []
+            url_event = threading.Event()
 
-            while time.time() - start_cf_time < 30.0:
-                if proc_cf.poll() is not None:
-                    break
-                line = proc_cf.stdout.readline() if proc_cf.stdout else ""
-                if line:
-                    found = self.extract_cloudflare_url(line)
-                    if found:
-                        extracted_url = found
-                        break
-                else:
-                    time.sleep(0.1)
+            def _drain_cf(proc: subprocess.Popen) -> None:
+                try:
+                    for line in iter(proc.stdout.readline, ""):
+                        if not line:
+                            break
+                        if not url_event.is_set():
+                            found = self.extract_cloudflare_url(line)
+                            if found:
+                                extracted_url_holder.append(found)
+                                url_event.set()
+                except Exception:
+                    pass
 
-            if not extracted_url:
+            drain_thread = threading.Thread(
+                target=_drain_cf,
+                args=(proc_cf,),
+                daemon=True,
+                name="CloudflarePipeDrain",
+            )
+            drain_thread.start()
+
+            # Wait up to 30s for the tunnel URL
+            url_event.wait(timeout=30.0)
+
+            if not extracted_url_holder:
                 self.status.cloudflare = "ERROR"
-                self.status.last_error = "Cloudflare tunnel failed to start"
+                self.status.last_error = "Cloudflare tunnel failed to start (no URL received)"
                 self._log("ERROR: Cloudflare tunnel failed to start (no URL received)", log_cb)
                 self._notify_status(status_cb)
                 return False
 
+            extracted_url = extracted_url_holder[0]
             self.status.public_url = extracted_url
             self.status.cloudflare = "ONLINE"
             self._log("Tunnel online", log_cb)
